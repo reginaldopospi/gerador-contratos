@@ -3,43 +3,75 @@ import re
 import requests
 from datetime import date
 
-import hmac
-import streamlit as st
+# ============================================================
+# AUTH (LOGIN VIA STREAMLIT SECRETS) - APENAS 1 MÉTODO
+# ============================================================
 
-def _check_password():
+def auth_users() -> dict:
     """
-    Gate simples por senha usando st.secrets.
-    - Você define a senha no Streamlit Cloud em: Settings -> Secrets
+    Retorna o dicionário de usuários/senhas definido em st.secrets.
+
+    Formato esperado em Secrets (TOML):
+    [auth]
+    users = { reginaldo="senha", imobiliaria1="senha" }
     """
-    if "password_ok" not in st.session_state:
-        st.session_state["password_ok"] = False
+    try:
+        users = st.secrets.get("auth", {}).get("users", {})
+        return dict(users) if users else {}
+    except Exception:
+        return {}
 
-    if st.session_state["password_ok"]:
-        return True
+def is_logged_in() -> bool:
+    return bool(st.session_state.get("auth_ok", False))
 
-    st.markdown("## 🔐 Acesso restrito")
-    st.write("Digite a senha para acessar o sistema.")
+def do_logout():
+    st.session_state["auth_ok"] = False
+    st.session_state["auth_user"] = ""
+    st.rerun()
 
-    pwd = st.text_input("Senha", type="password")
+def render_login():
+    st.title("🔐 Acesso restrito")
+    st.caption("Digite seu usuário e senha para acessar o sistema.")
+
+    users = auth_users()
+    if not users:
+        st.error("⚠️ Nenhum usuário configurado. Configure em Settings → Secrets no Streamlit Cloud.")
+        st.stop()
 
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("Entrar"):
-            senha_correta = st.secrets.get("APP_PASSWORD", "")
-            if senha_correta and hmac.compare_digest(pwd, senha_correta):
-                st.session_state["password_ok"] = True
-                st.rerun()
-            else:
-                st.error("Senha incorreta.")
+        user = st.text_input("Usuário", key="login_user")
     with col2:
-        if st.button("Limpar"):
-            st.session_state["password_ok"] = False
-            st.rerun()
+        pwd = st.text_input("Senha", type="password", key="login_pwd")
 
+    if st.button("Entrar", key="btn_login"):
+        user = (user or "").strip()
+        pwd = (pwd or "").strip()
+
+        if user in users and pwd == str(users[user]):
+            st.session_state["auth_ok"] = True
+            st.session_state["auth_user"] = user
+            st.rerun()
+        else:
+            st.error("Usuário ou senha inválidos.")
+
+# Inicializa sessão
+if "auth_ok" not in st.session_state:
+    st.session_state["auth_ok"] = False
+if "auth_user" not in st.session_state:
+    st.session_state["auth_user"] = ""
+
+# Gate do app
+if not is_logged_in():
+    render_login()
     st.stop()
 
-# Chame isso no início do app (antes de renderizar o restante)
-_check_password()
+# ============================================================
+# CONFIG (depois do login)
+# ============================================================
+
+st.set_page_config(page_title="Gerador de Contratos", page_icon="📄", layout="wide")
+
 
 
 # ============================================================
@@ -49,9 +81,33 @@ _check_password()
 st.set_page_config(page_title="Gerador de Contratos", page_icon="📄", layout="wide")
 
 # ============================================================
-# CONFIG - SENHA ADMIN PARA GERENCIAR CORRETORES
+# AUTH (Streamlit Secrets) - Usuário/Senha por imobiliária
+# Secrets (Streamlit Cloud):
+# [auth.users]
+# monte_siao = "..."
+# imobiliaria_x = "..."
+# admin = "..."
 # ============================================================
-SENHA_ADMIN_CORRETORES = "217405"  # 🔐 troque para sua senha real
+
+def auth_users() -> dict:
+    """
+    Lê os usuários/senhas do Streamlit Secrets.
+    Retorna dict {usuario: senha}.
+    """
+    try:
+        return dict(st.secrets.get("auth", {}).get("users", {}))
+    except Exception:
+        return {}
+
+def validar_login(usuario: str, senha: str) -> bool:
+    """
+    Valida usuário e senha contra st.secrets['auth']['users'].
+    """
+    usuario = (usuario or "").strip()
+    senha = (senha or "").strip()
+    users = auth_users()
+    return bool(usuario) and (users.get(usuario) == senha)
+
 
 # ============================================================
 # STATE
@@ -2728,6 +2784,11 @@ st.sidebar.radio(
 
 st.sidebar.markdown("<hr style='opacity:0.2;'>", unsafe_allow_html=True)
 
+st.sidebar.markdown("---")
+st.sidebar.write(f"👤 Usuário: **{st.session_state.get('auth_user','')}**")
+if st.sidebar.button("Sair", key="btn_logout"):
+    do_logout()
+
 # ============================================================
 # ÍNDICE DE CLÁUSULAS (dinâmico) + NUMERAÇÃO AUTOMÁTICA
 # ============================================================
@@ -3548,37 +3609,39 @@ elif step()["id"] == "permutas_dacao":
         set_("dacao_descricao", "")
 
 # ============================================================
-# TELA OCULTA: SENHA ADMIN
+# TELA OCULTA: LOGIN (Admin / Imobiliárias)
 # ============================================================
 elif step()["id"] == "senha_admin":
     st.subheader("🔐 Acesso restrito")
-    st.info("Digite a senha para acessar o gerenciamento de corretores.")
+    st.info("Informe usuário e senha para acessar as áreas restritas.")
 
-    senha = st.text_input("Senha", type="password", key="senha_admin_input")
+    usuario = st.text_input("Usuário", key="auth_usuario")
+    senha = st.text_input("Senha", type="password", key="auth_senha")
 
     col1, col2 = st.columns(2)
 
     with col1:
-        if st.button("✅ Entrar", key="btn_senha_admin_entrar"):
-            if senha == SENHA_ADMIN_CORRETORES:
-                st.session_state.admin_liberado = True
+        if st.button("✅ Entrar", key="btn_auth_entrar"):
+            if validar_login(usuario, senha):
+                # salva o usuário logado (imobiliária)
+                st.session_state["auth_user"] = usuario.strip()
+
+                # libera admin (se for admin) e também libera as telas restritas
+                st.session_state.admin_liberado = (usuario.strip() == "admin")
                 st.session_state.admin_corretores_liberado = True
 
                 destino = get("destino_admin", "admin_corretores")
-
                 if destino == "admin_clausulas":
                     abrir_admin_clausulas()
                 else:
                     abrir_admin_corretores()
             else:
-                st.error("❌ Senha incorreta.")
-
+                st.error("❌ Usuário ou senha incorretos.")
 
     with col2:
-        if st.button("⬅️ Voltar", key="btn_senha_admin_voltar"):
-            go_to_step("preco_chaves")   # ✅ volta diretamente
+        if st.button("⬅️ Voltar", key="btn_auth_voltar"):
+            go_to_step("preco_chaves")  # mantém seu fluxo atual
             st.rerun()
-
 
 # ============================================================
 # TELA OCULTA: ADMIN CORRETORES (LISTA / EDITAR / EXCLUIR)
