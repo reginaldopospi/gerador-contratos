@@ -474,10 +474,7 @@ def adicionar_corretor_completo(nome, cpf, banco, agencia, conta, pix):
     # recarrega
     _carregar_corretores_supabase()
     return new_id
-
-    set_("corretores_cadastrados", base)
-    return novo_id
-
+   
 def set_list(k, v):
     set_(k, v)
 
