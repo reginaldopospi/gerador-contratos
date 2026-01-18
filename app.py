@@ -7,6 +7,30 @@ from supabase import create_client, Client
 from typing import Optional
 
 # ============================================================
+# STATE HELPERS (BASE DO APP) - get / set_ / get_list
+# ============================================================
+
+def _ensure_dados():
+    if "dados" not in st.session_state:
+        st.session_state.dados = {}
+
+def set_(key: str, value):
+    _ensure_dados()
+    st.session_state.dados[key] = value
+
+def get_list(key: str) -> list:
+    _ensure_dados()
+    v = st.session_state.dados.get(key)
+    if isinstance(v, list):
+        return v
+    if v is None:
+        st.session_state.dados[key] = []
+        return st.session_state.dados[key]
+    # se tiver algum valor errado salvo, normaliza para lista vazia
+    st.session_state.dados[key] = []
+    return st.session_state.dados[key]
+
+# ============================================================
 # CONFIG (depois do login)
 # ============================================================
 
@@ -265,6 +289,11 @@ def get_list(k):
         v = []
         st.session_state.dados[k] = v
     return v
+
+def set_list(k, v):
+    if "dados" not in st.session_state:
+        st.session_state.dados = {}
+    st.session_state.dados[k] = v
 
 
 # ============================================================
