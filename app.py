@@ -6,7 +6,12 @@ from datetime import date
 from supabase import create_client, Client
 from typing import Optional
 
-#
+# ============================================================
+# CONFIG (depois do login)
+# ============================================================
+
+st.set_page_config(page_title="Gerador de Contratos", page_icon="📄", layout="wide")
+
 # ============================================================
 # SUPABASE - PERSISTÊNCIA DE CORRETORES
 # ============================================================
@@ -203,20 +208,6 @@ if "auth_user" not in st.session_state:
 if not is_logged_in():
     render_login()
     st.stop()
-
-# ============================================================
-# CONFIG (depois do login)
-# ============================================================
-
-st.set_page_config(page_title="Gerador de Contratos", page_icon="📄", layout="wide")
-
-
-
-# ============================================================
-# CONFIG
-# ============================================================
-
-st.set_page_config(page_title="Gerador de Contratos", page_icon="📄", layout="wide")
 
 # ============================================================
 # AUTH (Streamlit Secrets) - Usuário/Senha por imobiliária
