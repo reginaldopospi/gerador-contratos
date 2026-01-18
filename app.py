@@ -4,6 +4,8 @@ import requests
 from datetime import date
 
 from supabase import create_client, Client
+from typing import Optional
+
 
 # ============================================================
 # SUPABASE - PERSISTÊNCIA DE CORRETORES
