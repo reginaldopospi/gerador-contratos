@@ -256,6 +256,26 @@ if "step_index" not in st.session_state:
 if "dados" not in st.session_state:
     st.session_state.dados = {}
 
+def get(k, default=""):
+    if "dados" not in st.session_state:
+        st.session_state.dados = {}
+    return st.session_state.dados.get(k, default)
+
+def set_(k, v):
+    if "dados" not in st.session_state:
+        st.session_state.dados = {}
+    st.session_state.dados[k] = v
+
+def get_list(k):
+    if "dados" not in st.session_state:
+        st.session_state.dados = {}
+    v = st.session_state.dados.get(k, [])
+    if not isinstance(v, list):
+        v = []
+        st.session_state.dados[k] = v
+    return v
+
+
 # ============================================================
 # FLAGS DE TELAS OCULTAS
 # ============================================================
@@ -459,7 +479,7 @@ def adicionar_corretor_completo(nome, cpf, banco, agencia, conta, pix):
     return novo_id
 
 def set_list(k, v):
-    st.session_state.dados[k] = v
+    set_(k, v)
 
 
 # ============================================================
