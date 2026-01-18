@@ -326,24 +326,39 @@ if "cadastro_corretor_prefix" not in st.session_state.dados:
 
 # ============================================================
 # SUPABASE (PERSISTÊNCIA) - CORRETORES
-# ✅ ÚNICO lugar que grava/consulta corretores (sem importação)
+# ✅ ÚNICO lugar que grava/consulta corretores
 # ============================================================
 
 def _supabase() -> Optional["Client"]:
     """
-    Cria cliente Supabase usando Secrets:
-    [supabase]
-    url = "..."
-    service_role_key = "..."
+    Cria cliente Supabase aceitando DOIS formatos de Secrets:
+
+    Formato A (recomendado e mais simples):
+      supabase_url = "..."
+      supabase_service_role_key = "..."
+
+    Formato B (TOML aninhado):
+      [supabase]
+      url = "..."
+      service_role_key = "..."
     """
     try:
-        url = st.secrets.get("supabase", {}).get("url", "")
-        key = st.secrets.get("supabase", {}).get("service_role_key", "")
+        # Formato A
+        url = (st.secrets.get("supabase_url", "") or "").strip()
+        key = (st.secrets.get("supabase_service_role_key", "") or "").strip()
+
+        # Formato B (fallback)
+        if not url or not key:
+            url = (st.secrets.get("supabase", {}).get("url", "") or "").strip()
+            key = (st.secrets.get("supabase", {}).get("service_role_key", "") or "").strip()
+
         if not url or not key:
             return None
+
         return create_client(url, key)
     except Exception:
         return None
+
 
 def _tenant_imobiliaria() -> str:
     """
