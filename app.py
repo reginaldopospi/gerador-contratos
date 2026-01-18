@@ -287,71 +287,173 @@ if "cadastro_corretor_prefix" not in st.session_state.dados:
 
 
 # ============================================================
-# BASE DE CORRETORES CADASTRADOS (agora com DADOS COMPLETOS)
+# SUPABASE (PERSISTÊNCIA) - CORRETORES
+# ✅ ÚNICO lugar que grava/consulta corretores (sem importação)
 # ============================================================
-if "corretores_cadastrados" not in st.session_state.dados:
-    st.session_state.dados["corretores_cadastrados"] = [
-        {
-            "id": "cor001",
-            "nome": "Reginaldo Pospi",
-            "cpf": "000.000.000-00",
-            "banco": "",
-            "agencia": "",
-            "conta": "",
-            "pix": ""
-        }
-    ]
 
+def _supabase() -> Optional["Client"]:
+    """
+    Cria cliente Supabase usando Secrets:
+    [supabase]
+    url = "..."
+    service_role_key = "..."
+    """
+    try:
+        url = st.secrets.get("supabase", {}).get("url", "")
+        key = st.secrets.get("supabase", {}).get("service_role_key", "")
+        if not url or not key:
+            return None
+        return create_client(url, key)
+    except Exception:
+        return None
 
-def get(k, default=""):
-    return st.session_state.dados.get(k, default)
+def _tenant_imobiliaria() -> str:
+    """
+    Isola os dados por imobiliária/usuário logado.
+    Cada login vê apenas seus corretores.
+    """
+    u = (st.session_state.get("auth_user", "") or "").strip()
+    return u if u else "geral"
 
+def _carregar_corretores_supabase():
+    """
+    Carrega do Supabase para st.session_state.dados['corretores_cadastrados'].
+    Espera tabela: corretores
+    Colunas mínimas: imobiliaria, nome, cpf, banco, agencia, conta, pix
+    (id opcional, mas recomendado)
+    """
+    sb = _supabase()
+    if sb is None:
+        # fallback seguro: mantém lista vazia
+        st.session_state.dados["corretores_cadastrados"] = st.session_state.dados.get("corretores_cadastrados", [])
+        return
 
-def set_(k, v):
-    st.session_state.dados[k] = v
+    tenant = _tenant_imobiliaria()
 
+    try:
+        res = (
+            sb.table("corretores")
+              .select("*")
+              .eq("imobiliaria", tenant)
+              .order("nome")
+              .execute()
+        )
+        data = res.data or []
+        # normaliza chaves
+        base = []
+        for row in data:
+            base.append({
+                "id": row.get("id", ""),
+                "nome": row.get("nome", "") or "",
+                "cpf": row.get("cpf", "") or "",
+                "banco": row.get("banco", "") or "",
+                "agencia": row.get("agencia", "") or "",
+                "conta": row.get("conta", "") or "",
+                "pix": row.get("pix", "") or "",
+            })
+        st.session_state.dados["corretores_cadastrados"] = base
+    except Exception:
+        st.session_state.dados["corretores_cadastrados"] = st.session_state.dados.get("corretores_cadastrados", [])
 
-def get_list(k):
-    v = st.session_state.dados.get(k)
-    if isinstance(v, list):
-        return v
-    st.session_state.dados[k] = []
-    return st.session_state.dados[k]
-
-# ============================================================
-# HELPERS CORRETORES CADASTRADOS (com dados completos)
-# ============================================================
+def ensure_corretores_carregados():
+    """
+    Garante que os corretores do Supabase foram carregados 1x por sessão e por usuário.
+    """
+    tenant = _tenant_imobiliaria()
+    cache_key = f"_corretores_loaded__{tenant}"
+    if st.session_state.get(cache_key, False):
+        return
+    _carregar_corretores_supabase()
+    st.session_state[cache_key] = True
 
 def listar_corretores_nomes():
+    ensure_corretores_carregados()
     base = st.session_state.dados.get("corretores_cadastrados", [])
-    return [c["nome"] for c in base]
+    return [c.get("nome","") for c in base if c.get("nome","")]
 
 def buscar_corretor_por_nome(nome: str):
+    ensure_corretores_carregados()
     base = st.session_state.dados.get("corretores_cadastrados", [])
     for c in base:
         if c.get("nome") == nome:
             return c
     return None
 
+def salvar_corretor_supabase(nome, cpf, banco, agencia, conta, pix, corretor_id=None) -> str:
+    """
+    Cria ou atualiza corretor no Supabase.
+    - Se corretor_id existir -> update via upsert
+    - Se não existir -> cria (upsert também funciona)
+    Retorna o id (se o Supabase devolver).
+    """
+    sb = _supabase()
+    tenant = _tenant_imobiliaria()
+
+    payload = {
+        "imobiliaria": tenant,
+        "nome": (nome or "").strip(),
+        "cpf": (cpf or "").strip(),
+        "banco": (banco or "").strip(),
+        "agencia": (agencia or "").strip(),
+        "conta": (conta or "").strip(),
+        "pix": (pix or "").strip(),
+    }
+    if corretor_id:
+        payload["id"] = corretor_id
+
+    if sb is None:
+        # sem supabase, apenas mantém em memória
+        return corretor_id or ""
+
+    try:
+        # upsert precisa de uma constraint única; na prática, id é o ideal.
+        # Se não houver id, o Supabase pode criar nova linha.
+        res = sb.table("corretores").upsert(payload).execute()
+        # tenta recuperar id retornado
+        if res.data and isinstance(res.data, list) and len(res.data) > 0:
+            return res.data[0].get("id", corretor_id or "")
+        return corretor_id or ""
+    except Exception:
+        return corretor_id or ""
+
+def excluir_corretor_supabase(corretor_id: str) -> bool:
+    sb = _supabase()
+    if sb is None or not corretor_id:
+        return False
+
+    tenant = _tenant_imobiliaria()
+    try:
+        sb.table("corretores").delete().eq("id", corretor_id).eq("imobiliaria", tenant).execute()
+        return True
+    except Exception:
+        return False
+
 def adicionar_corretor_completo(nome, cpf, banco, agencia, conta, pix):
+    """
+    Mantém a assinatura que seu app já usa.
+    Agora grava no Supabase e recarrega a lista.
+    Evita duplicidade por NOME dentro da imobiliária.
+    """
+    ensure_corretores_carregados()
+
+    nome = (nome or "").strip()
+    if not nome:
+        return ""
+
+    # evita duplicidade por nome (na mesma imobiliária)
     base = st.session_state.dados.get("corretores_cadastrados", [])
-
-    # evita duplicidade
     for c in base:
-        if c.get("nome") == nome:
-            return c["id"]
+        if (c.get("nome","").strip() == nome):
+            return c.get("id","") or ""
 
-    novo_id = f"cor{len(base)+1:03d}"
+    # grava
+    new_id = salvar_corretor_supabase(
+        nome=nome, cpf=cpf, banco=banco, agencia=agencia, conta=conta, pix=pix, corretor_id=None
+    )
 
-    base.append({
-        "id": novo_id,
-        "nome": nome,
-        "cpf": cpf,
-        "banco": banco,
-        "agencia": agencia,
-        "conta": conta,
-        "pix": pix
-    })
+    # recarrega
+    _carregar_corretores_supabase()
+    return new_id
 
     set_("corretores_cadastrados", base)
     return novo_id
@@ -3815,21 +3917,29 @@ elif step()["id"] == "admin_corretores":
 
             with colA:
                 if st.button("💾 Salvar alterações", key=f"adm_save_{idx}"):
-                    base[idx]["nome"] = nome
-                    base[idx]["cpf"] = cpf
-                    base[idx]["banco"] = banco
-                    base[idx]["agencia"] = agencia
-                    base[idx]["conta"] = conta
-                    base[idx]["pix"] = pix
-                    set_("corretores_cadastrados", base)
+                    corretor_id = base[idx].get("id","")
+                
+                    # grava no Supabase
+                    salvar_corretor_supabase(
+                        nome=nome, cpf=cpf, banco=banco, agencia=agencia, conta=conta, pix=pix, corretor_id=corretor_id
+                    )
+                
+                    # recarrega lista
+                    _carregar_corretores_supabase()
                     st.success("✅ Alterações salvas.")
                     st.rerun()
 
+
             with colB:
                 if st.button("🗑️ Excluir corretor", key=f"adm_del_{idx}"):
-                    base.pop(idx)
-                    set_("corretores_cadastrados", base)
-                    st.warning("Corretor excluído.")
+                    corretor_id = base[idx].get("id","")
+                    ok = excluir_corretor_supabase(corretor_id)
+                
+                    _carregar_corretores_supabase()
+                    if ok:
+                        st.warning("Corretor excluído.")
+                    else:
+                        st.error("Não foi possível excluir no Supabase (verifique se existe coluna id e permissões).")
                     st.rerun()
     
     col1 = st.columns(1)
