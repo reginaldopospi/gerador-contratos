@@ -1,4 +1,8 @@
 import streamlit as st
+
+# ✅ TEM QUE SER O PRIMEIRO COMANDO STREAMLIT DO APP
+st.set_page_config(page_title="Gerador de Contratos", page_icon="📄", layout="wide")
+
 import re
 import requests
 from datetime import date
@@ -29,12 +33,6 @@ def get_list(key: str) -> list:
     # se tiver algum valor errado salvo, normaliza para lista vazia
     st.session_state.dados[key] = []
     return st.session_state.dados[key]
-
-# ============================================================
-# CONFIG (depois do login)
-# ============================================================
-
-st.set_page_config(page_title="Gerador de Contratos", page_icon="📄", layout="wide")
 
 # ============================================================
 # SUPABASE - PERSISTÊNCIA DE CORRETORES
