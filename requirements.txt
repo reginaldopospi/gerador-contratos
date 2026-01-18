@@ -1,3 +1,5 @@
 streamlit
 requests
 python-docx
+supabase==2.6.0
+httpx>=0.24,<0.28
