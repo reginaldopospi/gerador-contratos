@@ -3,6 +3,45 @@ import re
 import requests
 from datetime import date
 
+import hmac
+import streamlit as st
+
+def _check_password():
+    """
+    Gate simples por senha usando st.secrets.
+    - Você define a senha no Streamlit Cloud em: Settings -> Secrets
+    """
+    if "password_ok" not in st.session_state:
+        st.session_state["password_ok"] = False
+
+    if st.session_state["password_ok"]:
+        return True
+
+    st.markdown("## 🔐 Acesso restrito")
+    st.write("Digite a senha para acessar o sistema.")
+
+    pwd = st.text_input("Senha", type="password")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Entrar"):
+            senha_correta = st.secrets.get("APP_PASSWORD", "")
+            if senha_correta and hmac.compare_digest(pwd, senha_correta):
+                st.session_state["password_ok"] = True
+                st.rerun()
+            else:
+                st.error("Senha incorreta.")
+    with col2:
+        if st.button("Limpar"):
+            st.session_state["password_ok"] = False
+            st.rerun()
+
+    st.stop()
+
+# Chame isso no início do app (antes de renderizar o restante)
+_check_password()
+
+
 # ============================================================
 # CONFIG
 # ============================================================
