@@ -3942,10 +3942,11 @@ elif step()["id"] == "clausulas":
 
 
     colS1, colS2 = st.columns([1, 3])
-    with colS1:
-        
-    # Filtra só cláusulas visíveis
-    clausulas_visiveis = [c for c in CLAUSULAS if c["visivel"]()]
+    
+    with colS2:
+         
+        # Filtra só cláusulas visíveis
+        clausulas_visiveis = [c for c in CLAUSULAS if c["visivel"]()]
 
     st.divider()
 
