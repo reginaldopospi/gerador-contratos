@@ -3938,18 +3938,7 @@ elif step()["id"] == "clausulas":
             unsafe_allow_html=True
         )
 
-    st.subheader("📄 Pré-visualização do contrato final")
-
-
-    colS1, colS2 = st.columns([1, 3])
     
-    with colS2:
-         
-        # Filtra só cláusulas visíveis
-        clausulas_visiveis = [c for c in CLAUSULAS if c["visivel"]()]
-
-    st.divider()
-
     # ============================================================
     # QUADRO RESUMO / DAS PARTES
     # ============================================================
