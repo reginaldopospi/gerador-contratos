@@ -3929,7 +3929,17 @@ elif step()["id"] == "admin_corretores":
 # TELA: CLÁUSULAS (VISUALIZAÇÃO - ENTREGA DE CHAVES)
 # ============================================================
 elif step()["id"] == "clausulas":
+
+    tipo_contrato = get("contrato__tipo", "").strip()
+
+    if tipo_contrato:
+        st.markdown(
+            f"<h3 style='text-align:center; text-transform:uppercase;'>{tipo_contrato}</h3>",
+            unsafe_allow_html=True
+        )
+
     st.subheader("📄 Pré-visualização do contrato final")
+
 
     colS1, colS2 = st.columns([1, 3])
     with colS1:
