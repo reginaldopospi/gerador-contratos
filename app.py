@@ -3943,13 +3943,7 @@ elif step()["id"] == "clausulas":
 
     colS1, colS2 = st.columns([1, 3])
     with colS1:
-        if st.button("💾 Salvar contrato", key="btn_salvar_contrato"):
-            try:
-                out = sb_salvar_contrato_nova_versao()
-                st.success(f"Contrato salvo com sucesso: {out['label']}")
-            except Exception as e:
-                st.error(f"Não foi possível salvar: {e}")
-
+        
     # Filtra só cláusulas visíveis
     clausulas_visiveis = [c for c in CLAUSULAS if c["visivel"]()]
 
