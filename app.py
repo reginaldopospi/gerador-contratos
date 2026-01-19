@@ -341,6 +341,69 @@ def salvar_corretor_supabase(nome, cpf, banco, agencia, conta, pix, corretor_id=
 
     return str(corretor_id or "")
 
+import json
+from datetime import datetime, timezone
+
+def _now_iso():
+    return datetime.now(timezone.utc).isoformat()
+
+def sb_get_max_versao(tenant: str, numero_contrato: str) -> int:
+    sb = _supabase()
+    if sb is None:
+        return 0
+
+    try:
+        res = (
+            sb.table("contratos")
+              .select("versao")
+              .eq("imobiliaria", tenant)
+              .eq("numero_contrato", numero_contrato)
+              .order("versao", desc=True)
+              .limit(1)
+              .execute()
+        )
+        data = res.data or []
+        if not data:
+            return 0
+        return int(data[0].get("versao") or 0)
+    except Exception:
+        return 0
+
+def sb_salvar_contrato_nova_versao():
+    """
+    Salva o contrato inteiro (st.session_state.dados) no Supabase em public.contratos,
+    criando sempre uma NOVA versão (versao = max+1).
+    """
+    sb = _supabase()
+    if sb is None:
+        raise RuntimeError("Supabase não configurado (ver Secrets).")
+
+    tenant = _tenant_imobiliaria()
+
+    numero = (get("contrato__numero", "") or "").strip()
+    if not numero:
+        raise RuntimeError("Número do contrato está vazio. Preencha em 'Início'.")
+
+    max_v = sb_get_max_versao(tenant, numero)
+    nova_versao = max_v + 1
+    label = f"versao_{nova_versao}"
+
+    payload = {
+        "imobiliaria": tenant,
+        "numero_contrato": numero,
+        "versao": nova_versao,
+        "numero_versao_label": label,
+        "dados": st.session_state.dados,  # jsonb
+        "updated_at": _now_iso(),
+    }
+
+    # created_at só na criação (se seu banco já seta default, pode até remover)
+    if nova_versao == 1:
+        payload["created_at"] = _now_iso()
+
+    res = sb.table("contratos").insert(payload).execute()
+    return {"versao": nova_versao, "label": label, "data": (res.data or [])}
+
 
 def excluir_corretor_supabase(corretor_id: str) -> bool:
     sb = _supabase()
@@ -3867,6 +3930,15 @@ elif step()["id"] == "admin_corretores":
 # ============================================================
 elif step()["id"] == "clausulas":
     st.subheader("📄 Pré-visualização do contrato final")
+
+    colS1, colS2 = st.columns([1, 3])
+    with colS1:
+        if st.button("💾 Salvar contrato", key="btn_salvar_contrato"):
+            try:
+                out = sb_salvar_contrato_nova_versao()
+                st.success(f"Contrato salvo com sucesso: {out['label']}")
+            except Exception as e:
+                st.error(f"Não foi possível salvar: {e}")
 
     # Filtra só cláusulas visíveis
     clausulas_visiveis = [c for c in CLAUSULAS if c["visivel"]()]
