@@ -3330,37 +3330,7 @@ st.title(f"📄 {step()['title']}")
 if step()["id"] == "inicio":
     st.subheader("📝 Dados iniciais do contrato")
 
-    # --- LOCALIZAR CONTRATO (fica dentro do INICIO) ---
-    col1, col2 = st.columns([3, 1])
-
-    with col1:
-        buscar_numero = st.text_input(
-            "Número do contrato",
-            placeholder="Ex.: 1981",
-            key="buscar_contrato_numero"
-        )
-
-    with col2:
-        if st.button("Localizar", key="btn_localizar_contrato"):
-            numero = (buscar_numero or "").strip()
-            imobiliaria = _tenant_imobiliaria()
-
-            if not numero:
-                st.warning("Informe o número do contrato.")
-            else:
-                contrato = sb_obter_contrato_ultima_versao(imobiliaria, numero)
-
-                if not contrato:
-                    st.error("Contrato não encontrado para esta imobiliária.")
-                else:
-                    carregar_contrato_no_estado(contrato)
-                    st.success(f"Contrato carregado: {numero} ({contrato['numero_versao_label']})")
-                    st.session_state.step_index = 0
-                    st.rerun()
-
-    st.divider()
-
-    c1, c2, c3 = st.columns([1, 1, 1])
+   c1, c2, c3 = st.columns([1, 1, 1])
 
     with c1:
         numero = st.text_input(
