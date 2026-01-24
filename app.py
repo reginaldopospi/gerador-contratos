@@ -404,6 +404,46 @@ def sb_salvar_contrato_nova_versao():
     res = sb.table("contratos").insert(payload).execute()
     return {"versao": nova_versao, "label": label, "data": (res.data or [])}
 
+def sb_obter_contrato_ultima_versao(imobiliaria: str, numero_contrato: str):
+    """
+    Retorna a última versão do contrato (versão mais alta)
+    para a imobiliária logada e número informado.
+    """
+    sb = _supabase()
+    if not sb:
+        return None
+
+    resp = (
+        sb.table("contratos")
+        .select("id, imobiliaria, numero_contrato, versao, numero_versao_label, dados")
+        .eq("imobiliaria", imobiliaria)
+        .eq("numero_contrato", numero_contrato)
+        .order("versao", desc=True)
+        .limit(1)
+        .execute()
+    )
+
+    rows = resp.data or []
+    return rows[0] if rows else None
+
+
+def carregar_contrato_no_estado(contrato: dict):
+    """
+    Carrega o JSON salvo no Supabase para o estado do Streamlit.
+    """
+    if not contrato or "dados" not in contrato:
+        raise RuntimeError("Contrato inválido ou sem dados.")
+
+    st.session_state.dados = contrato["dados"]
+
+    # Sincroniza campos para inputs que usam key direta
+    for k, v in contrato["dados"].items():
+        st.session_state[k] = v
+
+    # Metadados do contrato carregado
+    st.session_state.dados["contrato__numero"] = contrato["numero_contrato"]
+    st.session_state.dados["contrato__versao"] = contrato["versao"]
+    st.session_state.dados["contrato__versao_label"] = contrato["numero_versao_label"]
 
 def excluir_corretor_supabase(corretor_id: str) -> bool:
     sb = _supabase()
