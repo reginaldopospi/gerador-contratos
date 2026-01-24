@@ -132,12 +132,6 @@ def validar_login(usuario: str, senha: str) -> bool:
 if "step_index" not in st.session_state:
     st.session_state.step_index = 0
 
-# ✅ Força a tela inicial do app para "inicio" apenas 1x por sessão
-if "boot_done" not in st.session_state:
-    st.session_state["boot_done"] = True
-    go_to_step("inicio")
-    st.rerun()
-
 if "dados" not in st.session_state:
     st.session_state.dados = {}
 
@@ -712,16 +706,14 @@ def buscar_empresa_por_cnpj(cnpj: str):
 # WIZARD STEPS (dinâmico)
 # ============================================================
 WIZARD_STEPS_BASE = [
-    {"id": "localizar", "title": "Localizar contrato"},   # ✅ NOVA TELA (vem antes)
-    {"id": "inicio", "title": "Início novo Contrato"},
+    {"id": "localizar_contrato", "title": "Localizar contrato"},
+    {"id": "inicio", "title": "Iniciar novo Contrato"},
     {"id": "imovel", "title": "Imóvel"},
     {"id": "vendedores", "title": "Parte Vendedora"},
     {"id": "compradores", "title": "Parte Compradora"},
     {"id": "preco_chaves", "title": "Preço e Chaves"},
     {"id": "parcelamento", "title": "Parcelamento (Detalhado)"},
     {"id": "permutas_dacao", "title": "Permutas / Dação (Detalhado)"},
-
-    # ✅ Tela visível - será pré-visualização do contrato final
     {"id": "clausulas", "title": "Prévia de Contrato"},
 
     # ✅ TELAS OCULTAS
@@ -766,6 +758,14 @@ def go_to_step(step_id: str):
     ids = [s["id"] for s in steps()]
     if step_id in ids:
         st.session_state.step_index = ids.index(step_id)
+
+# ============================================================
+# STARTUP: abrir sempre em "inicio" quando iniciar a sessão
+# ============================================================
+if "app_started" not in st.session_state:
+    st.session_state["app_started"] = True
+    go_to_step("inicio")
+    st.rerun()
 
 # ============================================================
 # NAVEGAÇÃO PARA TELAS OCULTAS (ADMIN CORRETORES)
