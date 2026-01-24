@@ -4093,14 +4093,12 @@ bloquear = existe_bloqueio_conjuge_na_tela_atual()
 # ============================================================
 def salvar_contrato_atual():
     """
-    Chama a sua rotina real de salvar no Supabase.
-    Ajuste a linha abaixo para o nome REAL da sua função existente.
+    Salva o contrato atual no Supabase, criando SEMPRE uma nova versão.
+    Retorna o label (ex.: "versao_1", "versao_2"...).
     """
-    # EXEMPLOS (use apenas 1, o que existir no seu app):
-    # return salvar_contrato() 
-    # return salvar_contrato_supabase()
-    # return sb_salvar_contrato()
-    return salvar_contrato()  # <-- TROQUE AQUI pelo nome real
+    res = sb_salvar_contrato_nova_versao()
+    return res.get("label", "")
+
 
 
 # ============================================================
