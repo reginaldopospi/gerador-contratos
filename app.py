@@ -132,6 +132,12 @@ def validar_login(usuario: str, senha: str) -> bool:
 if "step_index" not in st.session_state:
     st.session_state.step_index = 0
 
+# ✅ Força a tela inicial do app para "inicio" apenas 1x por sessão
+if "boot_done" not in st.session_state:
+    st.session_state["boot_done"] = True
+    go_to_step("inicio")
+    st.rerun()
+
 if "dados" not in st.session_state:
     st.session_state.dados = {}
 
@@ -706,7 +712,8 @@ def buscar_empresa_por_cnpj(cnpj: str):
 # WIZARD STEPS (dinâmico)
 # ============================================================
 WIZARD_STEPS_BASE = [
-    {"id": "inicio", "title": "Início"},
+    {"id": "localizar", "title": "Localizar contrato"},   # ✅ NOVA TELA (vem antes)
+    {"id": "inicio", "title": "Início novo Contrato"},
     {"id": "imovel", "title": "Imóvel"},
     {"id": "vendedores", "title": "Parte Vendedora"},
     {"id": "compradores", "title": "Parte Compradora"},
@@ -3325,9 +3332,52 @@ CLAUSULAS = [
 st.title(f"📄 {step()['title']}")
 
 # ============================================================
+# TELA: LOCALIZAR CONTRATO
+# ============================================================
+if step()["id"] == "localizar":
+    st.subheader("🔎 Localizar contrato salvo")
+    st.caption("Busque pelo número do contrato dentro da sua imobiliária (login).")
+
+    col1, col2 = st.columns([3, 1])
+
+    with col1:
+        buscar_numero = st.text_input(
+            "Número do contrato",
+            placeholder="Ex.: 1981",
+            key="buscar_contrato_numero"
+        )
+
+    with col2:
+        if st.button("Localizar", key="btn_localizar_contrato"):
+            numero = (buscar_numero or "").strip()
+            imobiliaria = _tenant_imobiliaria()
+
+            if not numero:
+                st.warning("Informe o número do contrato.")
+            else:
+                contrato = sb_obter_contrato_ultima_versao(imobiliaria, numero)
+
+                if not contrato:
+                    st.error("Contrato não encontrado para esta imobiliária.")
+                else:
+                    carregar_contrato_no_estado(contrato)
+                    st.success(
+                        f"Contrato carregado: {numero} ({contrato.get('numero_versao_label','')})"
+                    )
+                    go_to_step("inicio")
+                    st.rerun()
+
+    st.divider()
+
+    if st.button("⬅️ Voltar para iniciar novo contrato", key="btn_voltar_inicio_localizar"):
+        go_to_step("inicio")
+        st.rerun()
+
+
+# ============================================================
 # TELA 1: INÍCIO
 # ============================================================
-if step()["id"] == "inicio":
+elif step()["id"] == "inicio":
     st.subheader("📝 Dados iniciais do contrato")
 
     c1, c2, c3 = st.columns([1, 1, 1])
