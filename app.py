@@ -3373,6 +3373,37 @@ if step()["id"] == "localizar":
         go_to_step("inicio")
         st.rerun()
 
+# ============================================================
+# TELA: LOCALIZAR CONTRATO (ANTES DO INÍCIO NO WIZARD)
+# ============================================================
+elif step()["id"] == "localizar_contrato":
+    st.title("Localizar contrato")
+    st.caption("Digite o número do contrato para carregar a última versão salva desta imobiliária.")
+
+    numero_busca = st.text_input(
+        "Número do contrato",
+        placeholder="Ex.: 1981",
+        key="buscar_contrato_numero"
+    )
+
+    # Somente o botão de buscar
+    if st.button("🔎 Buscar", key="btn_localizar_contrato"):
+        numero_busca = (numero_busca or "").strip()
+        imobiliaria = _tenant_imobiliaria()
+
+        if not numero_busca:
+            st.warning("Informe o número do contrato.")
+        else:
+            contrato = sb_obter_contrato_ultima_versao(imobiliaria, numero_busca)
+            if not contrato:
+                st.error("Contrato não encontrado para esta imobiliária.")
+            else:
+                carregar_contrato_no_estado(contrato)
+                st.success(f"Contrato carregado: {numero_busca} ({contrato.get('numero_versao_label','')})")
+
+                # após localizar, ir para o Início (novo contrato / edição a partir do carregado)
+                go_to_step("inicio")
+                st.rerun()
 
 # ============================================================
 # TELA 1: INÍCIO
@@ -4195,30 +4226,28 @@ def salvar_contrato_atual():
 # ============================================================
 # FOOTER: BOTÕES DE NAVEGAÇÃO
 # ============================================================
-col_prev, col_next = st.columns([1, 1])
 
-with col_prev:
-    if st.button("⬅️ Voltar", key="btn_footer_voltar", disabled=(st.session_state.step_index == 0)):
-        go_prev()
-        st.rerun()
+if step()["id"] != "localizar_contrato":
+    col_prev, col_next = st.columns([1, 1])
 
-with col_next:
-    if step()["id"] == "clausulas":
-        # Botão "Salvar contrato" no lugar do "Avançar"
-        if st.button("💾 Salvar contrato", key="btn_footer_salvar_contrato"):
-            try:
-                versao_label = salvar_contrato_atual()  # pode retornar "versao_1" etc, se você já fizer isso
-                if versao_label:
-                    st.success(f"✅ Contrato salvo com sucesso: {versao_label}")
-                else:
-                    st.success("✅ Contrato salvo com sucesso.")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Não foi possível salvar: {e}")
-    else:
-        if st.button("Avançar ➡️", key="btn_footer_avancar", disabled=bloquear):
-            go_next()
+    with col_prev:
+        if st.button("⬅️ Voltar", key="btn_footer_voltar", disabled=(st.session_state.step_index == 0)):
+            go_prev()
             st.rerun()
+
+    with col_next:
+        if step()["id"] == "clausulas":
+            if st.button("💾 Salvar contrato", key="btn_footer_salvar_contrato"):
+                try:
+                    sb_salvar_contrato_nova_versao()
+                    st.success("✅ Contrato salvo com sucesso.")
+                except Exception as e:
+                    st.error(f"Não foi possível salvar: {e}")
+        else:
+            if st.button("Avançar ➡️", key="btn_footer_avancar", disabled=bloquear):
+                go_next()
+                st.rerun()
+
 
 
 def abrir_admin_clausulas():
