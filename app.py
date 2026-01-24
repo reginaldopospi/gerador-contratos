@@ -3330,7 +3330,7 @@ st.title(f"📄 {step()['title']}")
 if step()["id"] == "inicio":
     st.subheader("📝 Dados iniciais do contrato")
 
-   c1, c2, c3 = st.columns([1, 1, 1])
+    c1, c2, c3 = st.columns([1, 1, 1])
 
     with c1:
         numero = st.text_input(
@@ -3345,7 +3345,8 @@ if step()["id"] == "inicio":
         tipo = st.selectbox(
             "Tipo de contrato",
             ["Compromisso de Venda e Compra de Imóvel", "Cessão de Posse e Direitos sobre Imóvel"],
-            index=0 if get("contrato__tipo", "Compra e Venda") == "Compra e Venda" else 1,
+            index=0 if get("contrato__tipo", "Compromisso de Venda e Compra de Imóvel")
+                    == "Compromisso de Venda e Compra de Imóvel" else 1,
             key="contrato__tipo_select",
         )
         set_("contrato__tipo", tipo)
@@ -3359,39 +3360,36 @@ if step()["id"] == "inicio":
         )
         set_("contrato__email_solicitante", email)
 
-st.divider()
-st.subheader("🔎 Localizar contrato salvo")
+    st.divider()
+    st.subheader("🔎 Localizar contrato salvo")
 
-col1, col2 = st.columns([3, 1])
+    col1, col2 = st.columns([3, 1])
 
-with col1:
-    buscar_numero = st.text_input(
-        "Número do contrato",
-        placeholder="Ex.: 1981",
-        key="buscar_contrato_numero"
-    )
+    with col1:
+        buscar_numero = st.text_input(
+            "Número do contrato",
+            placeholder="Ex.: 1981",
+            key="buscar_contrato_numero"
+        )
 
-with col2:
-    if st.button("Localizar", key="btn_localizar_contrato"):
-        numero = buscar_numero.strip()
-        imobiliaria = _tenant_imobiliaria()
+    with col2:
+        if st.button("Localizar", key="btn_localizar_contrato"):
+            numero_busca = (buscar_numero or "").strip()
+            imobiliaria = _tenant_imobiliaria()
 
-        if not numero:
-            st.warning("Informe o número do contrato.")
-        else:
-            contrato = sb_obter_contrato_ultima_versao(imobiliaria, numero)
-
-            if not contrato:
-                st.error("Contrato não encontrado para esta imobiliária.")
+            if not numero_busca:
+                st.warning("Informe o número do contrato.")
             else:
-                carregar_contrato_no_estado(contrato)
-                st.success(
-                    f"Contrato carregado: {numero} ({contrato['numero_versao_label']})"
-                )
+                contrato = sb_obter_contrato_ultima_versao(imobiliaria, numero_busca)
 
-                # volta ao início com dados carregados
-                st.session_state.step_index = 0
-                st.rerun()
+                if not contrato:
+                    st.error("Contrato não encontrado para esta imobiliária.")
+                else:
+                    carregar_contrato_no_estado(contrato)
+                    st.success(f"Contrato carregado: {numero_busca} ({contrato.get('numero_versao_label','')})")
+                    st.session_state.step_index = 0
+                    st.rerun()
+
 
 # ============================================================
 # TELA 2: IMÓVEL
