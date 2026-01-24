@@ -4089,9 +4089,23 @@ def existe_bloqueio_conjuge_na_tela_atual() -> bool:
 bloquear = existe_bloqueio_conjuge_na_tela_atual()
 
 # ============================================================
+# FUNÇÃO ÚNICA PARA SALVAR CONTRATO (use em qualquer lugar)
+# ============================================================
+def salvar_contrato_atual():
+    """
+    Chama a sua rotina real de salvar no Supabase.
+    Ajuste a linha abaixo para o nome REAL da sua função existente.
+    """
+    # EXEMPLOS (use apenas 1, o que existir no seu app):
+    # return salvar_contrato() 
+    # return salvar_contrato_supabase()
+    # return sb_salvar_contrato()
+    return salvar_contrato()  # <-- TROQUE AQUI pelo nome real
+
+
+# ============================================================
 # FOOTER: BOTÕES DE NAVEGAÇÃO
 # ============================================================
-
 col_prev, col_next = st.columns([1, 1])
 
 with col_prev:
@@ -4100,10 +4114,22 @@ with col_prev:
         st.rerun()
 
 with col_next:
-    if st.button("Avançar ➡️", key="btn_footer_avancar", disabled=bloquear):
-        go_next()
-        st.rerun()
-
+    if step()["id"] == "clausulas":
+        # Botão "Salvar contrato" no lugar do "Avançar"
+        if st.button("💾 Salvar contrato", key="btn_footer_salvar_contrato"):
+            try:
+                versao_label = salvar_contrato_atual()  # pode retornar "versao_1" etc, se você já fizer isso
+                if versao_label:
+                    st.success(f"✅ Contrato salvo com sucesso: {versao_label}")
+                else:
+                    st.success("✅ Contrato salvo com sucesso.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Não foi possível salvar: {e}")
+    else:
+        if st.button("Avançar ➡️", key="btn_footer_avancar", disabled=bloquear):
+            go_next()
+            st.rerun()
 
 
 def abrir_admin_clausulas():
