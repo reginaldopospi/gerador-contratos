@@ -3410,37 +3410,6 @@ elif step()["id"] == "inicio":
         )
         set_("contrato__email_solicitante", email)
 
-    st.divider()
-    st.subheader("🔎 Localizar contrato salvo")
-
-    col1, col2 = st.columns([3, 1])
-
-    with col1:
-        buscar_numero = st.text_input(
-            "Número do contrato",
-            placeholder="Ex.: 1988",
-            key="buscar_contrato_numero"
-        )
-
-    with col2:
-        if st.button("Localizar", key="btn_localizar_contrato"):
-            numero_busca = (buscar_numero or "").strip()
-            imobiliaria = _tenant_imobiliaria()
-
-            if not numero_busca:
-                st.warning("Informe o número do contrato.")
-            else:
-                contrato = sb_obter_contrato_ultima_versao(imobiliaria, numero_busca)
-
-                if not contrato:
-                    st.error("Contrato não encontrado para esta imobiliária.")
-                else:
-                    carregar_contrato_no_estado(contrato)
-                    st.success(f"Contrato carregado: {numero_busca} ({contrato.get('numero_versao_label','')})")
-                    st.session_state.step_index = 0
-                    st.rerun()
-
-
 # ============================================================
 # TELA 2: IMÓVEL
 # ============================================================
