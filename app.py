@@ -3368,7 +3368,7 @@ if step()["id"] == "inicio":
     with col1:
         buscar_numero = st.text_input(
             "Número do contrato",
-            placeholder="Ex.: 1981",
+            placeholder="Ex.: 1988",
             key="buscar_contrato_numero"
         )
 
