@@ -3595,7 +3595,7 @@ elif step()["id"] == "imovel":
 # ============================================================
 # TELA 3: VENDEDORES
 # ============================================================
-elif step()["id"] == "vendedores":
+if step()["id"] == "vendedores":
     st.subheader("👥 Parte Vendedora")
 
     ensure_min_one_party("vendedores", "vend")
