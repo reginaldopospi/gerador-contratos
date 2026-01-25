@@ -706,7 +706,7 @@ def buscar_empresa_por_cnpj(cnpj: str):
 # WIZARD STEPS (dinâmico)
 # ============================================================
 WIZARD_STEPS_BASE = [
-    {"id": "localizar_contrato", "title": "Localizar contrato", "hidden": True},
+    {"id": "localizar_contrato", "title": "Localizar contrato"},
     {"id": "inicio", "title": "Iniciar novo Contrato"},
     {"id": "imovel", "title": "Imóvel"},
     {"id": "vendedores", "title": "Parte Vendedora"},
@@ -3336,31 +3336,23 @@ st.title(f"📄 {step()['title']}")
 # TELA: LOCALIZAR CONTRATO (OCULTA)
 # ============================================================
 if step()["id"] == "localizar_contrato":
-    st.subheader("🔎 Localizar contrato salvo")
+    st.header("🔎 Localizar contrato")
 
-    buscar_numero = st.text_input(
-        "Número do contrato",
-        placeholder="Ex.: 1981",
-        key="buscar_contrato_numero"
-    )
+    numero = st.text_input("Número do contrato")
 
-    if st.button("Buscar", key="btn_localizar_contrato"):
-        numero_busca = (buscar_numero or "").strip()
-        imobiliaria = _tenant_imobiliaria()
+    if st.button("Buscar contrato"):
+        contrato = sb_obter_contrato_ultima_versao(
+            _tenant_imobiliaria(),
+            numero.strip()
+        )
 
-        if not numero_busca:
-            st.warning("Informe o número do contrato.")
+        if contrato:
+            carregar_contrato_no_estado(contrato)
+            go_to_step("inicio")
+            st.rerun()
         else:
-            contrato = sb_obter_contrato_ultima_versao(imobiliaria, numero_busca)
+            st.error("Contrato não encontrado.")
 
-            if not contrato:
-                st.error("Contrato não encontrado para esta imobiliária.")
-            else:
-                carregar_contrato_no_estado(contrato)
-                st.success(f"Contrato carregado: {numero_busca} ({contrato.get('numero_versao_label','')})")
-
-                # vai para o Início com os dados carregados
-                go_to_step("inicio")
 
 
 # ============================================================
