@@ -3329,166 +3329,82 @@ CLAUSULAS = [
 st.title(f"📄 {step()['title']}")
 
 # ============================================================
-# TELA: LOCALIZAR CONTRATO
+# TELA: LOCALIZAR CONTRATO (nova tela)
 # ============================================================
-if step()["id"] == "localizar":
+if step()["id"] == "localizar_contrato":
     st.subheader("🔎 Localizar contrato salvo")
-    st.caption("Busque pelo número do contrato dentro da sua imobiliária (login).")
 
     col1, col2 = st.columns([3, 1])
 
     with col1:
         buscar_numero = st.text_input(
             "Número do contrato",
-            placeholder="Ex.: 1981",
+            placeholder="Ex.: 1988",
             key="buscar_contrato_numero"
         )
 
     with col2:
         if st.button("Localizar", key="btn_localizar_contrato"):
-            numero = (buscar_numero or "").strip()
+            numero_busca = (buscar_numero or "").strip()
             imobiliaria = _tenant_imobiliaria()
 
-            if not numero:
+            if not numero_busca:
                 st.warning("Informe o número do contrato.")
             else:
-                contrato = sb_obter_contrato_ultima_versao(imobiliaria, numero)
+                contrato = sb_obter_contrato_ultima_versao(imobiliaria, numero_busca)
 
                 if not contrato:
                     st.error("Contrato não encontrado para esta imobiliária.")
                 else:
                     carregar_contrato_no_estado(contrato)
                     st.success(
-                        f"Contrato carregado: {numero} ({contrato.get('numero_versao_label','')})"
+                        f"Contrato carregado: {numero_busca} ({contrato.get('numero_versao_label','')})"
                     )
+                    # Volta para o início (iniciar novo contrato) já com dados carregados
                     go_to_step("inicio")
                     st.rerun()
 
-    st.divider()
-
-    if st.button("⬅️ Voltar para iniciar novo contrato", key="btn_voltar_inicio_localizar"):
-        go_to_step("inicio")
-        st.rerun()
-
 # ============================================================
-# TELA: LOCALIZAR CONTRATO (ANTES DO INÍCIO NO WIZARD)
-# ============================================================
-elif step()["id"] == "localizar_contrato":
-    st.title("Localizar contrato")
-    st.caption("Digite o número do contrato para carregar a última versão salva desta imobiliária.")
-
-    numero_busca = st.text_input(
-        "Número do contrato",
-        placeholder="Ex.: 1981",
-        key="buscar_contrato_numero"
-    )
-
-    # Somente o botão de buscar
-    if st.button("🔎 Buscar", key="btn_localizar_contrato"):
-        numero_busca = (numero_busca or "").strip()
-        imobiliaria = _tenant_imobiliaria()
-
-        if not numero_busca:
-            st.warning("Informe o número do contrato.")
-        else:
-            contrato = sb_obter_contrato_ultima_versao(imobiliaria, numero_busca)
-            if not contrato:
-                st.error("Contrato não encontrado para esta imobiliária.")
-            else:
-                carregar_contrato_no_estado(contrato)
-                st.success(f"Contrato carregado: {numero_busca} ({contrato.get('numero_versao_label','')})")
-
-                # após localizar, ir para o Início (novo contrato / edição a partir do carregado)
-                go_to_step("inicio")
-                st.rerun()
-
-import json
-from datetime import datetime, timezone
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-def _jsonable(obj):
-    """
-    Garante que 'dados' seja serializável para jsonb no Supabase.
-    Se houver date/datetime/objeto não-JSON, converte para string.
-    """
-    return json.loads(json.dumps(obj, default=str))
-
-def sb_get_max_versao(imobiliaria: str, numero_contrato: str) -> int:
-    """
-    Busca a maior versão já salva para (imobiliaria, numero_contrato).
-    Retorna 0 se não existir.
-    """
-    sb = _supabase()
-    if sb is None:
-        raise RuntimeError("Supabase não configurado (ver Secrets).")
-
-    resp = (
-        sb.table("contratos")
-          .select("versao")
-          .eq("imobiliaria", imobiliaria)
-          .eq("numero_contrato", numero_contrato)
-          .order("versao", desc=True)
-          .limit(1)
-          .execute()
-    )
-    data = resp.data or []
-    if not data:
-        return 0
-    try:
-        return int(data[0].get("versao") or 0)
-    except Exception:
-        return 0
-
-def sb_salvar_contrato_nova_versao() -> dict:
-    """
-    Salva o contrato inteiro (st.session_state.dados) no Supabase em public.contratos,
-    criando sempre uma NOVA versão (versao = max+1).
-    """
-    sb = _supabase()
-    if sb is None:
-        raise RuntimeError("Supabase não configurado (ver Secrets).")
-
-    tenant = _tenant_imobiliaria()
-
-    numero = (get("contrato__numero", "") or "").strip()
-    if not numero:
-        raise RuntimeError("Número do contrato está vazio. Preencha em 'Iniciar novo Contrato'.")
-
-    max_v = sb_get_max_versao(tenant, numero)
-    nova_versao = max_v + 1
-    label = f"versao_{nova_versao}"
-
-    payload = {
-        "imobiliaria": tenant,
-        "numero_contrato": numero,
-        "versao": nova_versao,
-        "numero_versao_label": label,
-        "dados": _jsonable(st.session_state.dados),  # jsonb
-        "updated_at": _now_iso(),
-    }
-
-    # created_at só na versão 1 (se seu banco já tem DEFAULT, pode remover)
-    if nova_versao == 1:
-        payload["created_at"] = _now_iso()
-
-    res = sb.table("contratos").insert(payload).execute()
-
-    # ✅ Zera o "dirty" SOMENTE depois de salvar com sucesso
-    st.session_state["contrato_dirty"] = False
-
-    return {
-        "versao": nova_versao,
-        "label": label,
-        "data": (res.data or []),
-    }
-
-# ============================================================
-# TELA 1: INÍCIO
+# TELA 1: INÍCIO (renomear título depois, conforme você quer)
 # ============================================================
 elif step()["id"] == "inicio":
     st.subheader("📝 Dados iniciais do contrato")
+
+    c1, c2, c3 = st.columns([1, 1, 1])
+
+    with c1:
+        numero = st.text_input(
+            "Número do contrato",
+            value=get("contrato__numero", ""),
+            key="contrato__numero_input",
+            placeholder="Ex.: 1981"
+        )
+        set_("contrato__numero", numero)
+
+    with c2:
+        tipo = st.selectbox(
+            "Tipo de contrato",
+            ["Compromisso de Venda e Compra de Imóvel", "Cessão de Posse e Direitos sobre Imóvel"],
+            index=0 if get("contrato__tipo", "Compromisso de Venda e Compra de Imóvel")
+                    == "Compromisso de Venda e Compra de Imóvel" else 1,
+            key="contrato__tipo_select",
+        )
+        set_("contrato__tipo", tipo)
+
+    with c3:
+        email = st.text_input(
+            "E-mail do solicitante do contrato",
+            value=get("contrato__email_solicitante", ""),
+            key="contrato__email_solicitante_input",
+            placeholder="ex: cliente@cliente.com.br"
+        )
+        set_("contrato__email_solicitante", email)
+
+# ============================================================
+# TELA 2: IMÓVEL
+# ============================================================
+elif step()["id"] == "imovel":
+    st.subheader("🏠 Dados do Imóvel")
 
     c1, c2, c3 = st.columns([1, 1, 1])
 
