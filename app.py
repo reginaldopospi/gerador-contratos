@@ -20,7 +20,12 @@ def _ensure_dados():
 
 def set_(key: str, value):
     _ensure_dados()
+    old = st.session_state.dados.get(key, None)
     st.session_state.dados[key] = value
+
+    if old != value:
+        st.session_state["contrato_dirty"] = True
+
 
 def get_list(key: str) -> list:
     _ensure_dados()
@@ -403,6 +408,9 @@ def sb_salvar_contrato_nova_versao():
 
     res = sb.table("contratos").insert(payload).execute()
     return {"versao": nova_versao, "label": label, "data": (res.data or [])}
+
+st.session_state["contrato_dirty"] = False
+
 
 def sb_obter_contrato_ultima_versao(imobiliaria: str, numero_contrato: str):
     """
@@ -3526,6 +3534,22 @@ elif step()["id"] == "imovel":
         # ============================================================
         # ✅ Informações adicionais
         # ============================================================
+
+        # --- ANTES dos checkboxes (logo no início do bloco "Informações adicionais") ---
+        if "imovel__parcelamento_ativado" not in st.session_state:
+            st.session_state["imovel__parcelamento_ativado"] = bool(get("parcelamento_ativado", False))
+        
+        if "imovel__permutas_ativado" not in st.session_state:
+            st.session_state["imovel__permutas_ativado"] = bool(get("permutas_dacao_ativado", False))
+        
+        # --- CHECKBOXES (SEM value=) ---
+        st.checkbox("Ativar tela de Parcelamento detalhado", key="imovel__parcelamento_ativado")
+        set_("parcelamento_ativado", st.session_state["imovel__parcelamento_ativado"])
+        
+        st.checkbox("Ativar tela de Permutas / Dação em pagamento", key="imovel__permutas_ativado")
+        set_("permutas_dacao_ativado", st.session_state["imovel__permutas_ativado"])
+
+        
         st.divider()
         st.markdown("### Informações adicionais")
         
