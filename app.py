@@ -709,7 +709,7 @@ def buscar_empresa_por_cnpj(cnpj: str):
 # WIZARD STEPS (dinâmico)
 # ============================================================
 WIZARD_STEPS_BASE = [
-    {"id": "localizar_contrato", "title": "Localizar contrato"},
+    {"id": "localizar_contrato", "title": "Localizar contrato", "hidden": True},
     {"id": "inicio", "title": "Iniciar novo Contrato"},
     {"id": "imovel", "title": "Imóvel"},
     {"id": "vendedores", "title": "Parte Vendedora"},
