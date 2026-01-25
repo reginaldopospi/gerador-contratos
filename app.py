@@ -25,6 +25,9 @@ def set_(key: str, value):
 
     if old != value:
         st.session_state["contrato_dirty"] = True
+    
+    if "contrato_dirty" not in st.session_state:
+        st.session_state["contrato_dirty"] = False
 
 
 def get_list(key: str) -> list:
