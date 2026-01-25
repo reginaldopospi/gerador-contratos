@@ -135,7 +135,9 @@ def validar_login(usuario: str, senha: str) -> bool:
 # STATE
 # ============================================================
 if "step_index" not in st.session_state:
-    st.session_state.step_index = 0
+    ids = [s["id"] for s in steps()]
+    st.session_state.step_index = ids.index("inicio") if "inicio" in ids else 0
+
 
 if "dados" not in st.session_state:
     st.session_state.dados = {}
@@ -4237,7 +4239,6 @@ def salvar_contrato_atual():
 # ============================================================
 # FOOTER: BOTÕES DE NAVEGAÇÃO
 # ============================================================
-
 if step()["id"] != "localizar_contrato":
     col_prev, col_next = st.columns([1, 1])
 
@@ -4247,21 +4248,16 @@ if step()["id"] != "localizar_contrato":
             st.rerun()
 
     with col_next:
-    if step()["id"] == "clausulas":
-        if st.button("💾 Salvar contrato", key="btn_footer_salvar_contrato"):
-            try:
-                info = sb_salvar_contrato_nova_versao()
-                st.success(f"✅ Contrato salvo: {get('contrato__numero','')} ({info['label']})")
-                # NÃO use st.rerun() dentro de callback; aqui é clique normal, pode usar:
+        if step()["id"] == "clausulas":
+            if st.button("💾 Salvar contrato", key="btn_footer_salvar_contrato"):
+                # aqui você chama a função real (ex.: sb_salvar_contrato_nova_versao)
+                r = sb_salvar_contrato_nova_versao()
+                st.success(f"Contrato salvo: {get('contrato__numero','')} ({r['label']})")
                 st.rerun()
-            except Exception as e:
-                st.error(f"Não foi possível salvar: {e}")
-    else:
-        if st.button("Avançar ➡️", key="btn_footer_avancar", disabled=bloquear):
-            go_next()
-            st.rerun()
-
-
+        else:
+            if st.button("Avançar ➡️", key="btn_footer_avancar", disabled=bloquear):
+                go_next()
+                st.rerun()
 
 
 def abrir_admin_clausulas():
