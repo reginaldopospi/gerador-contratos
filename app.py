@@ -134,11 +134,6 @@ def validar_login(usuario: str, senha: str) -> bool:
 # ============================================================
 # STATE
 # ============================================================
-if "step_index" not in st.session_state:
-    ids = [s["id"] for s in steps()]
-    st.session_state.step_index = ids.index("inicio") if "inicio" in ids else 0
-
-
 if "dados" not in st.session_state:
     st.session_state.dados = {}
 
@@ -747,6 +742,13 @@ def steps():
         out.append(s)
 
     return out
+
+# ============================================================
+# STATE
+# ============================================================
+if "step_index" not in st.session_state:
+    ids = [s["id"] for s in steps()]
+    st.session_state.step_index = ids.index("inicio") if "inicio" in ids else 0
 
 def step():
     return steps()[st.session_state.step_index]
