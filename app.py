@@ -3331,82 +3331,41 @@ CLAUSULAS = [
 st.title(f"📄 {step()['title']}")
 
 # ============================================================
-# TELA: LOCALIZAR CONTRATO (nova tela)
+# TELA: LOCALIZAR CONTRATO (OCULTA)
 # ============================================================
-if step()["id"] == "localizar_contrato":
+elif step()["id"] == "localizar_contrato":
     st.subheader("🔎 Localizar contrato salvo")
 
-    col1, col2 = st.columns([3, 1])
+    buscar_numero = st.text_input(
+        "Número do contrato",
+        placeholder="Ex.: 1981",
+        key="buscar_contrato_numero"
+    )
 
-    with col1:
-        buscar_numero = st.text_input(
-            "Número do contrato",
-            placeholder="Ex.: 1988",
-            key="buscar_contrato_numero"
-        )
+    if st.button("Buscar", key="btn_localizar_contrato"):
+        numero_busca = (buscar_numero or "").strip()
+        imobiliaria = _tenant_imobiliaria()
 
-    with col2:
-        if st.button("Localizar", key="btn_localizar_contrato"):
-            numero_busca = (buscar_numero or "").strip()
-            imobiliaria = _tenant_imobiliaria()
+        if not numero_busca:
+            st.warning("Informe o número do contrato.")
+        else:
+            contrato = sb_obter_contrato_ultima_versao(imobiliaria, numero_busca)
 
-            if not numero_busca:
-                st.warning("Informe o número do contrato.")
+            if not contrato:
+                st.error("Contrato não encontrado para esta imobiliária.")
             else:
-                contrato = sb_obter_contrato_ultima_versao(imobiliaria, numero_busca)
+                carregar_contrato_no_estado(contrato)
+                st.success(f"Contrato carregado: {numero_busca} ({contrato.get('numero_versao_label','')})")
 
-                if not contrato:
-                    st.error("Contrato não encontrado para esta imobiliária.")
-                else:
-                    carregar_contrato_no_estado(contrato)
-                    st.success(
-                        f"Contrato carregado: {numero_busca} ({contrato.get('numero_versao_label','')})"
-                    )
-                    # Volta para o início (iniciar novo contrato) já com dados carregados
-                    go_to_step("inicio")
-                    st.rerun()
+                # vai para o Início com os dados carregados
+                go_to_step("inicio")
+
 
 # ============================================================
 # TELA 1: INÍCIO (renomear título depois, conforme você quer)
 # ============================================================
 elif step()["id"] == "inicio":
     st.subheader("📝 Dados iniciais do contrato")
-
-    c1, c2, c3 = st.columns([1, 1, 1])
-
-    with c1:
-        numero = st.text_input(
-            "Número do contrato",
-            value=get("contrato__numero", ""),
-            key="contrato__numero_input",
-            placeholder="Ex.: 1981"
-        )
-        set_("contrato__numero", numero)
-
-    with c2:
-        tipo = st.selectbox(
-            "Tipo de contrato",
-            ["Compromisso de Venda e Compra de Imóvel", "Cessão de Posse e Direitos sobre Imóvel"],
-            index=0 if get("contrato__tipo", "Compromisso de Venda e Compra de Imóvel")
-                    == "Compromisso de Venda e Compra de Imóvel" else 1,
-            key="contrato__tipo_select",
-        )
-        set_("contrato__tipo", tipo)
-
-    with c3:
-        email = st.text_input(
-            "E-mail do solicitante do contrato",
-            value=get("contrato__email_solicitante", ""),
-            key="contrato__email_solicitante_input",
-            placeholder="ex: cliente@cliente.com.br"
-        )
-        set_("contrato__email_solicitante", email)
-
-# ============================================================
-# TELA 2: IMÓVEL
-# ============================================================
-elif step()["id"] == "imovel":
-    st.subheader("🏠 Dados do Imóvel")
 
     c1, c2, c3 = st.columns([1, 1, 1])
 
