@@ -409,9 +409,6 @@ def sb_salvar_contrato_nova_versao():
     res = sb.table("contratos").insert(payload).execute()
     return {"versao": nova_versao, "label": label, "data": (res.data or [])}
 
-st.session_state["contrato_dirty"] = False
-
-
 def sb_obter_contrato_ultima_versao(imobiliaria: str, numero_contrato: str):
     """
     Retorna a última versão do contrato (versão mais alta)
@@ -3405,6 +3402,88 @@ elif step()["id"] == "localizar_contrato":
                 go_to_step("inicio")
                 st.rerun()
 
+import json
+from datetime import datetime, timezone
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+def _jsonable(obj):
+    """
+    Garante que 'dados' seja serializável para jsonb no Supabase.
+    Se houver date/datetime/objeto não-JSON, converte para string.
+    """
+    return json.loads(json.dumps(obj, default=str))
+
+def sb_get_max_versao(imobiliaria: str, numero_contrato: str) -> int:
+    """
+    Busca a maior versão já salva para (imobiliaria, numero_contrato).
+    Retorna 0 se não existir.
+    """
+    sb = _supabase()
+    if sb is None:
+        raise RuntimeError("Supabase não configurado (ver Secrets).")
+
+    resp = (
+        sb.table("contratos")
+          .select("versao")
+          .eq("imobiliaria", imobiliaria)
+          .eq("numero_contrato", numero_contrato)
+          .order("versao", desc=True)
+          .limit(1)
+          .execute()
+    )
+    data = resp.data or []
+    if not data:
+        return 0
+    try:
+        return int(data[0].get("versao") or 0)
+    except Exception:
+        return 0
+
+def sb_salvar_contrato_nova_versao() -> dict:
+    """
+    Salva o contrato inteiro (st.session_state.dados) no Supabase em public.contratos,
+    criando sempre uma NOVA versão (versao = max+1).
+    """
+    sb = _supabase()
+    if sb is None:
+        raise RuntimeError("Supabase não configurado (ver Secrets).")
+
+    tenant = _tenant_imobiliaria()
+
+    numero = (get("contrato__numero", "") or "").strip()
+    if not numero:
+        raise RuntimeError("Número do contrato está vazio. Preencha em 'Iniciar novo Contrato'.")
+
+    max_v = sb_get_max_versao(tenant, numero)
+    nova_versao = max_v + 1
+    label = f"versao_{nova_versao}"
+
+    payload = {
+        "imobiliaria": tenant,
+        "numero_contrato": numero,
+        "versao": nova_versao,
+        "numero_versao_label": label,
+        "dados": _jsonable(st.session_state.dados),  # jsonb
+        "updated_at": _now_iso(),
+    }
+
+    # created_at só na versão 1 (se seu banco já tem DEFAULT, pode remover)
+    if nova_versao == 1:
+        payload["created_at"] = _now_iso()
+
+    res = sb.table("contratos").insert(payload).execute()
+
+    # ✅ Zera o "dirty" SOMENTE depois de salvar com sucesso
+    st.session_state["contrato_dirty"] = False
+
+    return {
+        "versao": nova_versao,
+        "label": label,
+        "data": (res.data or []),
+    }
+
 # ============================================================
 # TELA 1: INÍCIO
 # ============================================================
@@ -4252,17 +4331,20 @@ if step()["id"] != "localizar_contrato":
             st.rerun()
 
     with col_next:
-        if step()["id"] == "clausulas":
-            if st.button("💾 Salvar contrato", key="btn_footer_salvar_contrato"):
-                try:
-                    sb_salvar_contrato_nova_versao()
-                    st.success("✅ Contrato salvo com sucesso.")
-                except Exception as e:
-                    st.error(f"Não foi possível salvar: {e}")
-        else:
-            if st.button("Avançar ➡️", key="btn_footer_avancar", disabled=bloquear):
-                go_next()
+    if step()["id"] == "clausulas":
+        if st.button("💾 Salvar contrato", key="btn_footer_salvar_contrato"):
+            try:
+                info = sb_salvar_contrato_nova_versao()
+                st.success(f"✅ Contrato salvo: {get('contrato__numero','')} ({info['label']})")
+                # NÃO use st.rerun() dentro de callback; aqui é clique normal, pode usar:
                 st.rerun()
+            except Exception as e:
+                st.error(f"Não foi possível salvar: {e}")
+    else:
+        if st.button("Avançar ➡️", key="btn_footer_avancar", disabled=bloquear):
+            go_next()
+            st.rerun()
+
 
 
 
