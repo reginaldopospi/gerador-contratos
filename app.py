@@ -585,7 +585,6 @@ def abrir_cadastro_corretor(destino: str, prefix: str):
     set_("novo_corretor_pix", "")
 
     go_to_step("cadastro_corretor")
-    st.rerun()
 
 
 def voltar_para_preco_chaves():
@@ -597,7 +596,6 @@ def voltar_para_preco_chaves():
     set_("cadastro_corretor_prefix", "")
 
     go_to_step("preco_chaves")
-    st.rerun()
 
 from datetime import date
 
@@ -773,23 +771,19 @@ if "app_started" not in st.session_state:
 
 def abrir_admin_corretores():
     st.session_state.step_index = steps().index(next(s for s in steps() if s["id"] == "admin_corretores"))
-    st.rerun()
 
 def abrir_admin_corretores_com_senha(step_voltar=None):
     # guarda de onde veio (para voltar depois)
     st.session_state.voltar_step_preco_chaves = step_voltar
     st.session_state.step_index = steps().index(next(s for s in steps() if s["id"] == "senha_admin"))
-    st.rerun()
 
 def abrir_admin_clausulas_com_senha(step_voltar=None):
     st.session_state.voltar_step_preco_chaves = step_voltar
     set_("destino_admin", "admin_clausulas")  # ✅ diz que o destino é admin_clausulas
     go_to_step("senha_admin")
-    st.rerun()
 
 def abrir_admin_clausulas():
     st.session_state.step_index = steps().index(next(s for s in steps() if s["id"] == "admin_clausulas"))
-    st.rerun()
 
 def voltar_da_admin_para_origem():
     # volta para a tela anterior (normalmente Preço e Chaves)
@@ -797,7 +791,6 @@ def voltar_da_admin_para_origem():
         st.session_state.step_index = st.session_state.voltar_step_preco_chaves
     else:
         st.session_state.step_index = 0  # volta pro início se não tiver origem
-    st.rerun()
 
 # COMPONENTE: ENDEREÇO REUTILIZÁVEL (CEP automático)
 # ============================================================
@@ -3036,7 +3029,6 @@ def _on_sidebar_nav_change():
     novo_idx_visivel = labels.index(escolha)
     novo_step_id = steps_visiveis[novo_idx_visivel]["id"]
     go_to_step(novo_step_id)
-    st.rerun()
 
 # ✅ Radio como menu (permite estilizar o selecionado)
 st.sidebar.radio(
