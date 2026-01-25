@@ -3333,7 +3333,7 @@ st.title(f"📄 {step()['title']}")
 # ============================================================
 # TELA: LOCALIZAR CONTRATO (OCULTA)
 # ============================================================
-elif step()["id"] == "localizar_contrato":
+if step()["id"] == "localizar_contrato":
     st.subheader("🔎 Localizar contrato salvo")
 
     buscar_numero = st.text_input(
