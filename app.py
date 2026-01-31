@@ -3686,17 +3686,20 @@ elif step()["id"] == "imovel":
         if "imovel__locacao" not in st.session_state:
             st.session_state["imovel__locacao"] = get("imovel__locacao", "")
         
-        # ✅ grava SEMPRE no dados (mesmo se o campo não estiver visível neste ciclo)
-        set_("imovel__locacao", st.session_state.get("imovel__locacao", ""))
+        def _locacao_cb():
+            set_("imovel__locacao", st.session_state.get("imovel__locacao", ""))
         
         if alugado == "SIM":
             st.text_area(
                 "O inquilino vai desocupar o imóvel ou a Parte Compradora vai assumir a locação?",
                 key="imovel__locacao",
-                height=140
+                height=140,
+                on_change=_locacao_cb
             )
-            # ✅ grava novamente após render (garante captura do texto digitado)
-            set_("imovel__locacao", st.session_state.get("imovel__locacao", ""))
+        
+        # ✅ mantém sempre persistido no dados (mesmo se não estiver visível)
+        set_("imovel__locacao", st.session_state.get("imovel__locacao", ""))
+
 
 
 
@@ -3715,17 +3718,20 @@ elif step()["id"] == "imovel":
         if "imovel__bens" not in st.session_state:
             st.session_state["imovel__bens"] = get("imovel__bens", "")
         
-        # ✅ grava SEMPRE no dados
-        set_("imovel__bens", st.session_state.get("imovel__bens", ""))
+        def _bens_cb():
+            set_("imovel__bens", st.session_state.get("imovel__bens", ""))
         
         if ficara_bens == "SIM":
             st.text_area(
                 "O que ficará no imóvel? (indicar somente os bens - Exemplo.: armário, sofá, etc.)",
                 key="imovel__bens",
-                height=140
+                height=140,
+                on_change=_bens_cb
             )
-            # ✅ grava novamente após render
-            set_("imovel__bens", st.session_state.get("imovel__bens", ""))
+        
+        # ✅ mantém sempre persistido no dados
+        set_("imovel__bens", st.session_state.get("imovel__bens", ""))
+
 
 
         
