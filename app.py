@@ -3681,8 +3681,10 @@ elif step()["id"] == "imovel":
             set_("imovel__alugado", alugado)
         
             # ✅ garante que o texto carregado exista no session_state
-            if "imovel__locacao" not in st.session_state:
-                st.session_state["imovel__locacao"] = get("imovel__locacao", "")
+            saved_locacao = get("imovel__locacao", "")
+            if ("imovel__locacao" not in st.session_state
+                or (not st.session_state["imovel__locacao"] and saved_locacao)):
+                st.session_state["imovel__locacao"] = saved_locacao
         
             def _locacao_cb():
                 set_("imovel__locacao", st.session_state.get("imovel__locacao", ""))
@@ -3709,8 +3711,10 @@ elif step()["id"] == "imovel":
             set_("imovel__ficara_bens", ficara_bens)
         
             # ✅ garante que o texto carregado exista no session_state
-            if "imovel__bens" not in st.session_state:
-                st.session_state["imovel__bens"] = get("imovel__bens", "")
+            saved_bens = get("imovel__bens", "")
+            if ("imovel__bens" not in st.session_state
+                or (not st.session_state["imovel__bens"] and saved_bens)):
+                st.session_state["imovel__bens"] = saved_bens
         
             def _bens_cb():
                 set_("imovel__bens", st.session_state.get("imovel__bens", ""))
