@@ -149,14 +149,16 @@ def set_(k, v):
     if "dados" not in st.session_state:
         st.session_state.dados = {}
 
+    # ✅ inicializa antes (não no final)
+    if "contrato_dirty" not in st.session_state:
+        st.session_state["contrato_dirty"] = False
+
     old = st.session_state.dados.get(k, None)
     st.session_state.dados[k] = v
 
     if old != v:
         st.session_state["contrato_dirty"] = True
 
-    if "contrato_dirty" not in st.session_state:
-        st.session_state["contrato_dirty"] = False
 
 def get_list(k):
     if "dados" not in st.session_state:
@@ -3684,13 +3686,18 @@ elif step()["id"] == "imovel":
         if "imovel__locacao" not in st.session_state:
             st.session_state["imovel__locacao"] = get("imovel__locacao", "")
         
+        # ✅ grava SEMPRE no dados (mesmo se o campo não estiver visível neste ciclo)
+        set_("imovel__locacao", st.session_state.get("imovel__locacao", ""))
+        
         if alugado == "SIM":
             st.text_area(
                 "O inquilino vai desocupar o imóvel ou a Parte Compradora vai assumir a locação?",
                 key="imovel__locacao",
                 height=140
             )
-            set_("imovel__locacao", st.session_state["imovel__locacao"])
+            # ✅ grava novamente após render (garante captura do texto digitado)
+            set_("imovel__locacao", st.session_state.get("imovel__locacao", ""))
+
 
 
             
@@ -3703,12 +3710,13 @@ elif step()["id"] == "imovel":
                 key="imovel__ficara_bens"
             )
             set_("imovel__ficara_bens", ficara_bens)
-
-            set_("imovel__ficara_bens", ficara_bens)
-            
+         
         # ✅ garante que o valor carregado do contrato esteja no session_state
         if "imovel__bens" not in st.session_state:
             st.session_state["imovel__bens"] = get("imovel__bens", "")
+        
+        # ✅ grava SEMPRE no dados
+        set_("imovel__bens", st.session_state.get("imovel__bens", ""))
         
         if ficara_bens == "SIM":
             st.text_area(
@@ -3716,7 +3724,9 @@ elif step()["id"] == "imovel":
                 key="imovel__bens",
                 height=140
             )
-            set_("imovel__bens", st.session_state["imovel__bens"])
+            # ✅ grava novamente após render
+            set_("imovel__bens", st.session_state.get("imovel__bens", ""))
+
 
         
     # ============================================================
