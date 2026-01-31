@@ -3626,8 +3626,7 @@ elif step()["id"] == "imovel":
         # ============================================================
         # ✅ Informações adicionais (PERSISTENTE ENTRE TELAS)
         # ============================================================
-                       
-        st.divider()
+                    
         st.markdown("### Informações adicionais")
         
         c1, c2, c3, c4 = st.columns(4)
