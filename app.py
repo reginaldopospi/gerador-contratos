@@ -462,6 +462,17 @@ def carregar_contrato_no_estado(contrato: dict):
     st.session_state.dados["contrato__versao"] = contrato["versao"]
     st.session_state.dados["contrato__versao_label"] = contrato["numero_versao_label"]
 
+    # ✅ NOVO: garante que CEP -> logradouro/bairro/cidade/uf/texto reapareçam após carregar
+    normalizar_enderecos_antes_de_salvar()
+
+    # ✅ NOVO: re-sincroniza no session_state tudo que a normalização colocou em "dados"
+    for k, v in st.session_state.dados.items():
+        st.session_state[k] = v
+
+    # ✅ NOVO: ao carregar contrato, não considerar como "alterado"
+    st.session_state["contrato_dirty"] = False
+
+
 def excluir_corretor_supabase(corretor_id: str) -> bool:
     sb = _supabase()
     if sb is None or not corretor_id:
@@ -3615,21 +3626,7 @@ elif step()["id"] == "imovel":
         # ============================================================
         # ✅ Informações adicionais (PERSISTENTE ENTRE TELAS)
         # ============================================================
-        
-        # ✅ usa as MESMAS chaves do contrato (sem chaves paralelas "imovel__...")
-        if "parcelamento_ativado" not in st.session_state:
-            st.session_state["parcelamento_ativado"] = bool(get("parcelamento_ativado", False))
-        
-        if "permutas_dacao_ativado" not in st.session_state:
-            st.session_state["permutas_dacao_ativado"] = bool(get("permutas_dacao_ativado", False))
-        
-        st.checkbox("Ativar tela de Parcelamento detalhado", key="parcelamento_ativado")
-        set_("parcelamento_ativado", st.session_state["parcelamento_ativado"])
-        
-        st.checkbox("Ativar tela de Permutas / Dação em pagamento", key="permutas_dacao_ativado")
-        set_("permutas_dacao_ativado", st.session_state["permutas_dacao_ativado"])
-
-        
+                       
         st.divider()
         st.markdown("### Informações adicionais")
         
