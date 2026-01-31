@@ -3064,13 +3064,12 @@ st.sidebar.markdown("---")
 st.sidebar.write(f"👤 Usuário: **{st.session_state.get('auth_user','')}**")
 
 # ==========================
-# ✅ Confirmação de saída sem salvar
+# ✅ Confirmação de saída (3 botões)
 # ==========================
 if "confirmar_saida_sem_salvar" not in st.session_state:
     st.session_state["confirmar_saida_sem_salvar"] = False
 
 if st.sidebar.button("Sair", key="btn_logout"):
-    # se houver mudanças, pede confirmação
     if st.session_state.get("contrato_dirty", False):
         st.session_state["confirmar_saida_sem_salvar"] = True
     else:
@@ -3079,18 +3078,32 @@ if st.sidebar.button("Sair", key="btn_logout"):
 if st.session_state.get("confirmar_saida_sem_salvar", False):
     st.sidebar.warning("Você quer sair sem salvar?")
 
-    cA, cB = st.sidebar.columns(2)
-    with cA:
-        if st.button("Sim, sair", key="btn_confirmar_sair"):
+    # 3 botões na mesma linha
+    b1, b2, b3 = st.sidebar.columns(3)
+
+    with b1:
+        if st.button("Sair sem salvar", key="btn_sair_sem_salvar"):
             st.session_state["confirmar_saida_sem_salvar"] = False
-            # limpa contrato atual
             st.session_state.dados = {}
             st.session_state["contrato_dirty"] = False
             do_logout()
 
-    with cB:
-        if st.button("Cancelar", key="btn_cancelar_sair"):
+    with b2:
+        if st.button("Cancelar", key="btn_cancelar_saida"):
             st.session_state["confirmar_saida_sem_salvar"] = False
+
+    with b3:
+        if st.button("Salvar e sair", key="btn_salvar_e_sair"):
+            # salva o contrato
+            r = sb_salvar_contrato_nova_versao()
+            st.session_state["contrato_dirty"] = False
+            st.session_state["confirmar_saida_sem_salvar"] = False
+
+            # (opcional) limpar contrato carregado antes de sair
+            st.session_state.dados = {}
+
+            do_logout()
+
 
 
 # ============================================================
