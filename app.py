@@ -68,6 +68,23 @@ def do_logout():
     st.session_state["auth_user"] = ""
     st.rerun()
 
+def limpar_contrato_atual():
+    keys_to_clear = list(st.session_state.dados.keys()) if "dados" in st.session_state else []
+    for key in keys_to_clear:
+        st.session_state.pop(key, None)
+    st.session_state.dados = {}
+
+    for key in [
+        "contrato__numero_input",
+        "contrato__tipo_select",
+        "contrato__email_solicitante_input",
+    ]:
+        st.session_state.pop(key, None)
+
+    st.session_state["contrato_dirty"] = False
+    go_to_step("inicio")
+    st.rerun()
+    
 def render_login():
     st.title("🔐 Acesso restrito")
     st.caption("Digite seu usuário e senha para acessar o sistema.")
@@ -814,7 +831,7 @@ def buscar_empresa_por_cnpj(cnpj: str):
 # ============================================================
 WIZARD_STEPS_BASE = [
     {"id": "localizar_contrato", "title": "Localizar contrato"},
-    {"id": "inicio", "title": "Iniciar novo Contrato"},
+    {"id": "inicio", "title": "Identificação do contrato"},
     {"id": "imovel", "title": "Imóvel"},
     {"id": "vendedores", "title": "Parte Vendedora"},
     {"id": "compradores", "title": "Parte Compradora"},
