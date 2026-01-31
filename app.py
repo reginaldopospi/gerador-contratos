@@ -972,8 +972,9 @@ def render_endereco(prefix: str, titulo: str):
 
     # ✅ inicializa session_state a partir do contrato carregado (dados)
     for k in keys.values():
-        if k not in st.session_state:
-            st.session_state[k] = get(k, "")
+        saved_value = get(k, "")
+        if k not in st.session_state or (not st.session_state[k] and saved_value):
+            st.session_state[k] = saved_value
 
     # ✅ CEP com callback (persistente)
     st.text_input(
