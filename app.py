@@ -149,7 +149,6 @@ def set_(k, v):
     if "dados" not in st.session_state:
         st.session_state.dados = {}
 
-    # ✅ inicializa antes (não no final)
     if "contrato_dirty" not in st.session_state:
         st.session_state["contrato_dirty"] = False
 
@@ -158,6 +157,7 @@ def set_(k, v):
 
     if old != v:
         st.session_state["contrato_dirty"] = True
+
 
 
 def get_list(k):
@@ -3648,7 +3648,7 @@ elif step()["id"] == "imovel":
         st.markdown("### Informações adicionais")
         
         c1, c2, c3, c4 = st.columns(4)
-                
+        
         with c1:
             par_far = st.radio(
                 "Imóvel do PAR ou FAR?",
@@ -3658,8 +3658,7 @@ elif step()["id"] == "imovel":
                 key="imovel__par_far"
             )
             set_("imovel__par_far", par_far)
-
-
+        
         with c2:
             alienado = st.radio(
                 "Alienado fiduciariamente?",
@@ -3669,7 +3668,6 @@ elif step()["id"] == "imovel":
                 key="imovel__alienado"
             )
             set_("imovel__alienado", alienado)
-
         
         with c3:
             alugado = st.radio(
@@ -3680,30 +3678,25 @@ elif step()["id"] == "imovel":
                 key="imovel__alugado"
             )
             set_("imovel__alugado", alugado)
-
         
-        # ✅ garante que o valor carregado do contrato esteja no session_state
-        if "imovel__locacao" not in st.session_state:
-            st.session_state["imovel__locacao"] = get("imovel__locacao", "")
+            # ✅ garante que o texto carregado exista no session_state
+            if "imovel__locacao" not in st.session_state:
+                st.session_state["imovel__locacao"] = get("imovel__locacao", "")
         
-        def _locacao_cb():
+            def _locacao_cb():
+                set_("imovel__locacao", st.session_state.get("imovel__locacao", ""))
+        
+            if alugado == "SIM":
+                st.text_area(
+                    "O inquilino vai desocupar o imóvel ou a Parte Compradora vai assumir a locação?",
+                    key="imovel__locacao",
+                    height=140,
+                    on_change=_locacao_cb
+                )
+        
+            # ✅ persiste sempre (mesmo se o campo não estiver visível)
             set_("imovel__locacao", st.session_state.get("imovel__locacao", ""))
         
-        if alugado == "SIM":
-            st.text_area(
-                "O inquilino vai desocupar o imóvel ou a Parte Compradora vai assumir a locação?",
-                key="imovel__locacao",
-                height=140,
-                on_change=_locacao_cb
-            )
-        
-        # ✅ mantém sempre persistido no dados (mesmo se não estiver visível)
-        set_("imovel__locacao", st.session_state.get("imovel__locacao", ""))
-
-
-
-
-            
         with c4:
             ficara_bens = st.radio(
                 "Ficará bens no imóvel?",
@@ -3713,24 +3706,24 @@ elif step()["id"] == "imovel":
                 key="imovel__ficara_bens"
             )
             set_("imovel__ficara_bens", ficara_bens)
-         
-        # ✅ garante que o valor carregado do contrato esteja no session_state
-        if "imovel__bens" not in st.session_state:
-            st.session_state["imovel__bens"] = get("imovel__bens", "")
         
-        def _bens_cb():
+            # ✅ garante que o texto carregado exista no session_state
+            if "imovel__bens" not in st.session_state:
+                st.session_state["imovel__bens"] = get("imovel__bens", "")
+        
+            def _bens_cb():
+                set_("imovel__bens", st.session_state.get("imovel__bens", ""))
+        
+            if ficara_bens == "SIM":
+                st.text_area(
+                    "O que ficará no imóvel? (indicar somente os bens - Exemplo.: armário, sofá, etc.)",
+                    key="imovel__bens",
+                    height=140,
+                    on_change=_bens_cb
+                )
+        
+            # ✅ persiste sempre (mesmo se o campo não estiver visível)
             set_("imovel__bens", st.session_state.get("imovel__bens", ""))
-        
-        if ficara_bens == "SIM":
-            st.text_area(
-                "O que ficará no imóvel? (indicar somente os bens - Exemplo.: armário, sofá, etc.)",
-                key="imovel__bens",
-                height=140,
-                on_change=_bens_cb
-            )
-        
-        # ✅ mantém sempre persistido no dados
-        set_("imovel__bens", st.session_state.get("imovel__bens", ""))
 
 
 
