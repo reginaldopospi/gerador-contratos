@@ -148,7 +148,15 @@ def get(k, default=""):
 def set_(k, v):
     if "dados" not in st.session_state:
         st.session_state.dados = {}
+
+    old = st.session_state.dados.get(k, None)
     st.session_state.dados[k] = v
+
+    if old != v:
+        st.session_state["contrato_dirty"] = True
+
+    if "contrato_dirty" not in st.session_state:
+        st.session_state["contrato_dirty"] = False
 
 def get_list(k):
     if "dados" not in st.session_state:
@@ -3054,8 +3062,36 @@ st.sidebar.markdown("<hr style='opacity:0.2;'>", unsafe_allow_html=True)
 
 st.sidebar.markdown("---")
 st.sidebar.write(f"👤 Usuário: **{st.session_state.get('auth_user','')}**")
+
+# ==========================
+# ✅ Confirmação de saída sem salvar
+# ==========================
+if "confirmar_saida_sem_salvar" not in st.session_state:
+    st.session_state["confirmar_saida_sem_salvar"] = False
+
 if st.sidebar.button("Sair", key="btn_logout"):
-    do_logout()
+    # se houver mudanças, pede confirmação
+    if st.session_state.get("contrato_dirty", False):
+        st.session_state["confirmar_saida_sem_salvar"] = True
+    else:
+        do_logout()
+
+if st.session_state.get("confirmar_saida_sem_salvar", False):
+    st.sidebar.warning("Você quer sair sem salvar?")
+
+    cA, cB = st.sidebar.columns(2)
+    with cA:
+        if st.button("Sim, sair", key="btn_confirmar_sair"):
+            st.session_state["confirmar_saida_sem_salvar"] = False
+            # limpa contrato atual
+            st.session_state.dados = {}
+            st.session_state["contrato_dirty"] = False
+            do_logout()
+
+    with cB:
+        if st.button("Cancelar", key="btn_cancelar_sair"):
+            st.session_state["confirmar_saida_sem_salvar"] = False
+
 
 # ============================================================
 # ÍNDICE DE CLÁUSULAS (dinâmico) + NUMERAÇÃO AUTOMÁTICA
@@ -3485,22 +3521,21 @@ elif step()["id"] == "imovel":
         set_("imovel__contribuinte", contribuinte)
 
         # ============================================================
-        # ✅ Informações adicionais
+        # ✅ Informações adicionais (PERSISTENTE ENTRE TELAS)
         # ============================================================
-
-        # --- ANTES dos checkboxes (logo no início do bloco "Informações adicionais") ---
-        if "imovel__parcelamento_ativado" not in st.session_state:
-            st.session_state["imovel__parcelamento_ativado"] = bool(get("parcelamento_ativado", False))
         
-        if "imovel__permutas_ativado" not in st.session_state:
-            st.session_state["imovel__permutas_ativado"] = bool(get("permutas_dacao_ativado", False))
+        # ✅ usa as MESMAS chaves do contrato (sem chaves paralelas "imovel__...")
+        if "parcelamento_ativado" not in st.session_state:
+            st.session_state["parcelamento_ativado"] = bool(get("parcelamento_ativado", False))
         
-        # --- CHECKBOXES (SEM value=) ---
-        st.checkbox("Ativar tela de Parcelamento detalhado", key="imovel__parcelamento_ativado")
-        set_("parcelamento_ativado", st.session_state["imovel__parcelamento_ativado"])
+        if "permutas_dacao_ativado" not in st.session_state:
+            st.session_state["permutas_dacao_ativado"] = bool(get("permutas_dacao_ativado", False))
         
-        st.checkbox("Ativar tela de Permutas / Dação em pagamento", key="imovel__permutas_ativado")
-        set_("permutas_dacao_ativado", st.session_state["imovel__permutas_ativado"])
+        st.checkbox("Ativar tela de Parcelamento detalhado", key="parcelamento_ativado")
+        set_("parcelamento_ativado", st.session_state["parcelamento_ativado"])
+        
+        st.checkbox("Ativar tela de Permutas / Dação em pagamento", key="permutas_dacao_ativado")
+        set_("permutas_dacao_ativado", st.session_state["permutas_dacao_ativado"])
 
         
         st.divider()
@@ -4208,8 +4243,10 @@ if step()["id"] != "localizar_contrato":
             if st.button("💾 Salvar contrato", key="btn_footer_salvar_contrato"):
                 # aqui você chama a função real (ex.: sb_salvar_contrato_nova_versao)
                 r = sb_salvar_contrato_nova_versao()
+                st.session_state["contrato_dirty"] = False
                 st.success(f"Contrato salvo: {get('contrato__numero','')} ({r['label']})")
                 st.rerun()
+
         else:
             if st.button("Avançar ➡️", key="btn_footer_avancar", disabled=bloquear):
                 go_next()
