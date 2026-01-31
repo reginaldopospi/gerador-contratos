@@ -906,34 +906,10 @@ def voltar_da_admin_para_origem():
     else:
         st.session_state.step_index = 0  # volta pro início se não tiver origem
 
-# COMPONENTE: ENDEREÇO REUTILIZÁVEL (CEP automático)
+# ============================================================
+# COMPONENTE: ENDEREÇO REUTILIZÁVEL (CEP automático) - PERSISTENTE
 # ============================================================
 def endereco_callback(prefix: str):
-    cep_key = f"{prefix}__cep"
-    cep = mask_cep(st.session_state.get(cep_key, ""))
-    st.session_state[cep_key] = cep
-    set_(cep_key, cep)
-
-    if len(so_digitos(cep)) == 8:
-        data = buscar_endereco_por_cep(cep)
-        if data:
-            st.session_state[f"{prefix}__logradouro"] = data.get("logradouro", "")
-            st.session_state[f"{prefix}__bairro"] = data.get("bairro", "")
-            st.session_state[f"{prefix}__cidade"] = data.get("localidade", "")
-            st.session_state[f"{prefix}__uf"] = data.get("uf", "")
-
-            set_(f"{prefix}__logradouro", data.get("logradouro", ""))
-            set_(f"{prefix}__bairro", data.get("bairro", ""))
-            set_(f"{prefix}__cidade", data.get("localidade", ""))
-            set_(f"{prefix}__uf", data.get("uf", ""))
-
-
-def render_endereco(prefix: str, titulo: str):
-    st.markdown(f"### 📍 {titulo}")
-
-    # ============================
-    # ✅ Inicialização correta
-    # ============================
     keys = {
         "cep": f"{prefix}__cep",
         "logradouro": f"{prefix}__logradouro",
@@ -945,24 +921,68 @@ def render_endereco(prefix: str, titulo: str):
         "texto": f"{prefix}__texto",
     }
 
+    # normaliza e persiste CEP
+    cep = mask_cep(st.session_state.get(keys["cep"], ""))
+    st.session_state[keys["cep"]] = cep
+    set_(keys["cep"], cep)
+
+    # se CEP completo -> busca e persiste campos
+    if len(so_digitos(cep)) == 8:
+        data = buscar_endereco_por_cep(cep)
+        if data:
+            st.session_state[keys["logradouro"]] = data.get("logradouro", "") or ""
+            st.session_state[keys["bairro"]] = data.get("bairro", "") or ""
+            st.session_state[keys["cidade"]] = data.get("localidade", "") or ""
+            st.session_state[keys["uf"]] = data.get("uf", "") or ""
+
+            set_(keys["logradouro"], st.session_state[keys["logradouro"]])
+            set_(keys["bairro"], st.session_state[keys["bairro"]])
+            set_(keys["cidade"], st.session_state[keys["cidade"]])
+            set_(keys["uf"], st.session_state[keys["uf"]])
+
+    # gera e persiste o texto completo (sempre que CEP muda)
+    endereco = format_endereco_completo(
+        st.session_state.get(keys["logradouro"], ""),
+        st.session_state.get(keys["numero"], ""),
+        st.session_state.get(keys["complemento"], ""),
+        st.session_state.get(keys["bairro"], ""),
+        st.session_state.get(keys["cidade"], ""),
+        st.session_state.get(keys["uf"], ""),
+        st.session_state.get(keys["cep"], ""),
+    )
+    st.session_state[keys["texto"]] = endereco
+    set_(keys["texto"], endereco)
+
+
+def render_endereco(prefix: str, titulo: str):
+    st.markdown(f"### 📍 {titulo}")
+
+    keys = {
+        "cep": f"{prefix}__cep",
+        "logradouro": f"{prefix}__logradouro",
+        "numero": f"{prefix}__numero",
+        "complemento": f"{prefix}__complemento",
+        "bairro": f"{prefix}__bairro",
+        "cidade": f"{prefix}__cidade",
+        "uf": f"{prefix}__uf",
+        "texto": f"{prefix}__texto",
+    }
+
+    # ✅ inicializa session_state a partir do contrato carregado (dados)
     for k in keys.values():
         if k not in st.session_state:
             st.session_state[k] = get(k, "")
 
-    # ============================
-    # ✅ CEP com callback
-    # ============================
+    # ✅ CEP com callback (persistente)
     st.text_input(
         "CEP",
         key=keys["cep"],
         on_change=lambda: endereco_callback(prefix),
-        placeholder="Ex.: 08663-040"
+        placeholder="Ex.: 08663-040",
     )
     set_(keys["cep"], st.session_state[keys["cep"]])
 
-    # ============================
-    # ✅ Inputs SEM value= (Streamlit usa session_state)
-    # ============================
+    # ✅ Inputs (persistentes por key)
     st.text_input("Logradouro", key=keys["logradouro"])
     st.text_input("Número", key=keys["numero"])
     st.text_input("Complemento", key=keys["complemento"])
@@ -970,15 +990,11 @@ def render_endereco(prefix: str, titulo: str):
     st.text_input("Cidade", key=keys["cidade"])
     st.text_input("UF", key=keys["uf"])
 
-    # ============================
-    # ✅ Salvar em dados
-    # ============================
+    # ✅ sempre persiste em dados (para salvar e para recarregar depois)
     for campo in ["logradouro", "numero", "complemento", "bairro", "cidade", "uf"]:
         set_(keys[campo], st.session_state[keys[campo]])
 
-    # ============================
-    # ✅ Gerar endereço completo
-    # ============================
+    # ✅ gera e persiste endereço completo (sempre)
     endereco = format_endereco_completo(
         st.session_state[keys["logradouro"]],
         st.session_state[keys["numero"]],
@@ -989,15 +1005,15 @@ def render_endereco(prefix: str, titulo: str):
         st.session_state[keys["cep"]],
     )
 
-    # ✅ salva e mostra
     st.session_state[keys["texto"]] = endereco
     set_(keys["texto"], endereco)
 
+    # ✅ MOSTRAR usando key (não some ao navegar)
     st.text_area(
         "Endereço completo (gerado)",
-        value=endereco,
+        key=keys["texto"],
         height=90,
-        disabled=True
+        disabled=True,
     )
 
 
@@ -3636,30 +3652,33 @@ elif step()["id"] == "imovel":
                 "Imóvel do PAR ou FAR?",
                 ["NÃO", "SIM"],
                 horizontal=True,
-                index=0,
+                index=(["NÃO", "SIM"].index(get("imovel__par_far", "NÃO"))),
                 key="imovel__par_far"
             )
             set_("imovel__par_far", par_far)
+
 
         with c2:
             alienado = st.radio(
                 "Alienado fiduciariamente?",
                 ["NÃO", "SIM"],
                 horizontal=True,
-                index=0,
+                index=(["NÃO", "SIM"].index(get("imovel__alienado", "NÃO"))),
                 key="imovel__alienado"
             )
             set_("imovel__alienado", alienado)
+
         
         with c3:
             alugado = st.radio(
                 "O imóvel está locado a terceiros?",
                 ["NÃO", "SIM"],
                 horizontal=True,
-                index=0,
+                index=(["NÃO", "SIM"].index(get("imovel__alugado", "NÃO"))),
                 key="imovel__alugado"
             )
             set_("imovel__alugado", alugado)
+
         
         if alugado == "SIM":
             locacao = st.text_area(
@@ -3669,17 +3688,18 @@ elif step()["id"] == "imovel":
                 key="imovel__locacao"
             )
             set_("imovel__locacao", locacao)
-        else:
-            set_("imovel__locacao", "")
+
             
         with c4:
             ficara_bens = st.radio(
                 "Ficará bens no imóvel?",
                 ["NÃO", "SIM"],
                 horizontal=True,
-                index=0,
+                index=(["NÃO", "SIM"].index(get("imovel__ficara_bens", "NÃO"))),
                 key="imovel__ficara_bens"
             )
+            set_("imovel__ficara_bens", ficara_bens)
+
             set_("imovel__ficara_bens", ficara_bens)
             
         if ficara_bens == "SIM":
@@ -3690,9 +3710,7 @@ elif step()["id"] == "imovel":
                 key="imovel__bens"
             )
             set_("imovel__bens", bens)
-        else:
-            set_("imovel__bens", "")
-
+        
     # ============================================================
     # DESCRIÇÃO DO IMÓVEL NA MATRÍCULA
     # ============================================================
