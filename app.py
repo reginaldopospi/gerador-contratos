@@ -3088,15 +3088,19 @@ if st.session_state.get("confirmar_saida_sem_salvar", False):
         st.session_state["confirmar_saida_sem_salvar"] = False
 
     if st.sidebar.button("Salvar e sair", key="btn_salvar_e_sair"):
+        numero = str(get("contrato__numero", "")).strip()
+    
+        if not numero:
+            st.sidebar.error("Preencha o número do contrato em 'Início' antes de salvar.")
+            st.session_state["confirmar_saida_sem_salvar"] = False
+            go_to_step("inicio")
+            st.rerun()
+    
         sb_salvar_contrato_nova_versao()
         st.session_state["contrato_dirty"] = False
         st.session_state["confirmar_saida_sem_salvar"] = False
         st.session_state.dados = {}
         do_logout()
-
-
-
-
 
 # ============================================================
 # ÍNDICE DE CLÁUSULAS (dinâmico) + NUMERAÇÃO AUTOMÁTICA
