@@ -3078,22 +3078,22 @@ if st.sidebar.button("Sair", key="btn_logout"):
 if st.session_state.get("confirmar_saida_sem_salvar", False):
     st.sidebar.warning("Você quer sair sem salvar?")
 
-    # 3 botões na mesma linha
-    if st.button("Sair sem salvar", key="btn_sair_sem_salvar"):
+    if st.sidebar.button("Sair sem salvar", key="btn_sair_sem_salvar"):
         st.session_state["confirmar_saida_sem_salvar"] = False
         st.session_state.dados = {}
         st.session_state["contrato_dirty"] = False
         do_logout()
 
-    if st.button("Cancelar", key="btn_cancelar_saida"):
+    if st.sidebar.button("Cancelar", key="btn_cancelar_saida"):
         st.session_state["confirmar_saida_sem_salvar"] = False
-    
-    if st.button("Salvar e sair", key="btn_salvar_e_sair"):
-        r = sb_salvar_contrato_nova_versao()
+
+    if st.sidebar.button("Salvar e sair", key="btn_salvar_e_sair"):
+        sb_salvar_contrato_nova_versao()
         st.session_state["contrato_dirty"] = False
         st.session_state["confirmar_saida_sem_salvar"] = False
         st.session_state.dados = {}
         do_logout()
+
 
 
 
