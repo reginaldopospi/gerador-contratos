@@ -401,6 +401,9 @@ def sb_salvar_contrato_nova_versao():
     nova_versao = max_v + 1
     label = f"versao_{nova_versao}"
 
+    # ✅ NOVO: garante que endereços via CEP estejam gravados no "dados" antes de salvar
+    normalizar_enderecos_antes_de_salvar()
+
     payload = {
         "imobiliaria": tenant,
         "numero_contrato": numero,
@@ -409,6 +412,7 @@ def sb_salvar_contrato_nova_versao():
         "dados": st.session_state.dados,  # jsonb
         "updated_at": _now_iso(),
     }
+
 
     # created_at só na criação (se seu banco já seta default, pode até remover)
     if nova_versao == 1:
@@ -694,7 +698,86 @@ def format_endereco_completo(logradouro, numero, complemento, bairro, cidade, uf
         texto += f" - CEP: {cep}"
     return texto.strip()
 
+# ============================================================
+# ✅ FIX: garantir que endereços vindos do CEP sejam persistidos no "dados"
+# (antes de salvar no Supabase)
+# ============================================================
+def _normalizar_endereco_por_prefix(prefix: str):
+    """
+    Para um prefixo tipo 'imovel__end' ou 'vend01__end',
+    garante que logradouro/bairro/cidade/uf e o texto completo estejam no st.session_state.dados.
+    """
+    cep_key = f"{prefix}__cep"
+    cep = get(cep_key, "").strip()
 
+    if len(so_digitos(cep)) != 8:
+        return
+
+    log_key = f"{prefix}__logradouro"
+    bai_key = f"{prefix}__bairro"
+    cid_key = f"{prefix}__cidade"
+    uf_key  = f"{prefix}__uf"
+    num_key = f"{prefix}__numero"
+    com_key = f"{prefix}__complemento"
+    txt_key = f"{prefix}__texto"
+
+    # Se algum campo “principal” estiver vazio, tenta buscar no ViaCEP e salvar em dados
+    if (not get(log_key, "").strip()
+        or not get(bai_key, "").strip()
+        or not get(cid_key, "").strip()
+        or not get(uf_key, "").strip()):
+
+        data = buscar_endereco_por_cep(cep)
+        if data:
+            set_(log_key, data.get("logradouro", "") or "")
+            set_(bai_key, data.get("bairro", "") or "")
+            set_(cid_key, data.get("localidade", "") or "")
+            set_(uf_key,  data.get("uf", "") or "")
+
+            # mantém session_state (pra UI também)
+            st.session_state[log_key] = get(log_key, "")
+            st.session_state[bai_key] = get(bai_key, "")
+            st.session_state[cid_key] = get(cid_key, "")
+            st.session_state[uf_key]  = get(uf_key, "")
+
+    # Sempre recalcula o endereço completo e persiste
+    endereco_txt = format_endereco_completo(
+        get(log_key, ""),
+        get(num_key, ""),
+        get(com_key, ""),
+        get(bai_key, ""),
+        get(cid_key, ""),
+        get(uf_key, ""),
+        get(cep_key, ""),
+    )
+    set_(txt_key, endereco_txt)
+    st.session_state[txt_key] = endereco_txt
+
+
+def normalizar_enderecos_antes_de_salvar():
+    """
+    Varre os prefixos de endereço usados no app e garante persistência em st.session_state.dados.
+    """
+    prefixos = []
+
+    # Imóvel principal
+    prefixos.append("imovel__end")
+
+    # Dação (se existir)
+    prefixos.append("dacao_imovel__end")
+
+    # Vendedores/Compradores (cada parte tem prefixo + '__end')
+    for pfx in get_list("vendedores"):
+        prefixos.append(f"{pfx}__end")
+
+    for pfx in get_list("compradores"):
+        prefixos.append(f"{pfx}__end")
+
+    # Normaliza todos
+    for pr in prefixos:
+        _normalizar_endereco_por_prefix(pr)
+
+    
 # ============================================================
 # RECEITAWS - BUSCA CNPJ (TERCEIRO)
 # ============================================================
@@ -4251,6 +4334,7 @@ if step()["id"] != "localizar_contrato":
         if step()["id"] == "clausulas":
             if st.button("💾 Salvar contrato", key="btn_footer_salvar_contrato"):
                 # aqui você chama a função real (ex.: sb_salvar_contrato_nova_versao)
+                normalizar_enderecos_antes_de_salvar()
                 r = sb_salvar_contrato_nova_versao()
                 st.session_state["contrato_dirty"] = False
                 st.success(f"Contrato salvo: {get('contrato__numero','')} ({r['label']})")
