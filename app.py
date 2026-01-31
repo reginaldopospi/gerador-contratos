@@ -3680,14 +3680,18 @@ elif step()["id"] == "imovel":
             set_("imovel__alugado", alugado)
 
         
+        # ✅ garante que o valor carregado do contrato esteja no session_state
+        if "imovel__locacao" not in st.session_state:
+            st.session_state["imovel__locacao"] = get("imovel__locacao", "")
+        
         if alugado == "SIM":
-            locacao = st.text_area(
+            st.text_area(
                 "O inquilino vai desocupar o imóvel ou a Parte Compradora vai assumir a locação?",
-                value=get("imovel__locacao", ""),
-                height=140,
-                key="imovel__locacao"
+                key="imovel__locacao",
+                height=140
             )
-            set_("imovel__locacao", locacao)
+            set_("imovel__locacao", st.session_state["imovel__locacao"])
+
 
             
         with c4:
@@ -3702,14 +3706,18 @@ elif step()["id"] == "imovel":
 
             set_("imovel__ficara_bens", ficara_bens)
             
+        # ✅ garante que o valor carregado do contrato esteja no session_state
+        if "imovel__bens" not in st.session_state:
+            st.session_state["imovel__bens"] = get("imovel__bens", "")
+        
         if ficara_bens == "SIM":
-            bens = st.text_area(
+            st.text_area(
                 "O que ficará no imóvel? (indicar somente os bens - Exemplo.: armário, sofá, etc.)",
-                value=get("imovel__bens", ""),
-                height=140,
-                key="imovel__bens"
+                key="imovel__bens",
+                height=140
             )
-            set_("imovel__bens", bens)
+            set_("imovel__bens", st.session_state["imovel__bens"])
+
         
     # ============================================================
     # DESCRIÇÃO DO IMÓVEL NA MATRÍCULA
