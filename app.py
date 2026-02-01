@@ -3539,6 +3539,9 @@ if step()["id"] == "localizar_contrato":
 elif step()["id"] == "inicio":
     st.subheader("📝 Dados iniciais do contrato")
 
+    if st.button("🧹 Limpar dados para novo contrato"):
+        limpar_contrato_atual()
+
     c1, c2, c3 = st.columns([1, 1, 1])
 
     with c1:
