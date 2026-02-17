@@ -1,0 +1,1 @@
+ALTER TABLE brokers ADD COLUMN creci TEXT;
