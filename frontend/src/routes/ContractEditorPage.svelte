@@ -56,7 +56,8 @@
     { key: "momentoPagto", label: "Momento do pagamento", placeholder: "Ex.: Na assinatura" }
   ];
 
-  $: clauseSuggestions = getClauseSuggestions(clauseSearch, availableClauses, draft.clausulasSelecionadas);
+  $: selectedClauseKeys = draft.clausulasSelecionadas.map((item) => item.clauseKey);
+  $: clauseSuggestions = getClauseSuggestions(clauseSearch, availableClauses, selectedClauseKeys);
 
   async function load(): Promise<void> {
     loading = true;
@@ -261,14 +262,24 @@
     if (key === "") {
       return;
     }
-    if (draft.clausulasSelecionadas.includes(key)) {
+    if (draft.clausulasSelecionadas.some((item) => item.clauseKey === key)) {
       clauseSearch = "";
       return;
     }
 
+    const match = availableClauses.find((item) => item.clause_key === key);
+
     draft = {
       ...draft,
-      clausulasSelecionadas: [...draft.clausulasSelecionadas, key]
+      clausulasSelecionadas: [
+        ...draft.clausulasSelecionadas,
+        {
+          clauseKey: key,
+          title: match?.title ?? key,
+          content: match?.content ?? "",
+          index: ""
+        }
+      ]
     };
     clauseSearch = "";
   }
@@ -276,7 +287,42 @@
   function removeClauseTag(clauseKey: string): void {
     draft = {
       ...draft,
-      clausulasSelecionadas: draft.clausulasSelecionadas.filter((key) => key !== clauseKey)
+      clausulasSelecionadas: draft.clausulasSelecionadas.filter((item) => item.clauseKey !== clauseKey)
+    };
+  }
+
+  function updateClauseTagIndex(clauseKey: string, value: string): void {
+    draft = {
+      ...draft,
+      clausulasSelecionadas: draft.clausulasSelecionadas.map((item) =>
+        item.clauseKey === clauseKey ? { ...item, index: value } : item
+      )
+    };
+  }
+
+  function addCustomClause(): void {
+    draft = {
+      ...draft,
+      clausulasCustomizadas: [
+        ...draft.clausulasCustomizadas,
+        { title: "", content: "", index: "" }
+      ]
+    };
+  }
+
+  function updateCustomClause(index: number, key: "title" | "content" | "index", value: string): void {
+    draft = {
+      ...draft,
+      clausulasCustomizadas: draft.clausulasCustomizadas.map((item, itemIndex) =>
+        itemIndex === index ? { ...item, [key]: value } : item
+      )
+    };
+  }
+
+  function removeCustomClause(index: number): void {
+    draft = {
+      ...draft,
+      clausulasCustomizadas: draft.clausulasCustomizadas.filter((_, itemIndex) => itemIndex !== index)
     };
   }
 
@@ -292,14 +338,6 @@
     if (clauseSuggestions.length > 0) {
       addClauseTag(clauseSuggestions[0].clause_key);
     }
-  }
-
-  function getClauseLabel(clauseKey: string): string {
-    const match = availableClauses.find((item) => item.clause_key === clauseKey);
-    if (!match) {
-      return clauseKey;
-    }
-    return `${match.title} (${match.clause_key})`;
   }
 
   function getClauseSuggestions(
@@ -582,19 +620,89 @@
             {#if draft.clausulasSelecionadas.length === 0}
               <p class="hint">Nenhuma clausula selecionada.</p>
             {:else}
-              <div class="tag-list">
-                {#each draft.clausulasSelecionadas as clauseKey}
-                  <span class="tag-pill">
-                    <span>{getClauseLabel(clauseKey)}</span>
-                    <button
-                      type="button"
-                      class="tag-remove"
-                      aria-label={`Remover clausula ${clauseKey}`}
-                      on:click={() => removeClauseTag(clauseKey)}
-                    >
-                      x
-                    </button>
-                  </span>
+              <div class="linked-clause-list">
+                {#each draft.clausulasSelecionadas as clause}
+                  <div class="linked-clause-card">
+                    <div class="linked-clause-title">
+                      <strong>{clause.title || clause.clauseKey}</strong>
+                      <small>{clause.clauseKey}</small>
+                    </div>
+                    <div class="field">
+                      <label for={`clause_index_${clause.clauseKey}`}>Indice no contrato</label>
+                      <input
+                        id={`clause_index_${clause.clauseKey}`}
+                        value={clause.index}
+                        placeholder="Ex.: 1.1.2"
+                        on:input={(event) => updateClauseTagIndex(clause.clauseKey, inputValue(event))}
+                      />
+                    </div>
+                    <div class="inline-actions">
+                      <button
+                        type="button"
+                        class="btn ghost btn-sm"
+                        aria-label={`Remover clausula ${clause.clauseKey}`}
+                        on:click={() => removeClauseTag(clause.clauseKey)}
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  </div>
+                {/each}
+              </div>
+            {/if}
+          </div>
+
+          <div class="editor-subsection">
+            <div class="party-column-head">
+              <h4>Clausulas customizadas vinculadas</h4>
+              <button class="btn ghost btn-sm" on:click={addCustomClause}>Adicionar clausula customizada</button>
+            </div>
+
+            {#if draft.clausulasCustomizadas.length === 0}
+              <p class="hint">Nenhuma clausula customizada vinculada.</p>
+            {:else}
+              <div class="delivery-clause-list">
+                {#each draft.clausulasCustomizadas as customClause, customIndex}
+                  <div class="delivery-clause-card">
+                    <div class="grid cols-2">
+                      <div class="field">
+                        <label for={`custom_clause_index_${customIndex}`}>Indice no contrato</label>
+                        <input
+                          id={`custom_clause_index_${customIndex}`}
+                          value={customClause.index}
+                          placeholder="Ex.: 1.1.2"
+                          on:input={(event) =>
+                            updateCustomClause(customIndex, "index", inputValue(event))}
+                        />
+                      </div>
+                      <div class="field">
+                        <label for={`custom_clause_title_${customIndex}`}>Titulo da clausula</label>
+                        <input
+                          id={`custom_clause_title_${customIndex}`}
+                          value={customClause.title}
+                          placeholder="Ex.: Clausula X"
+                          on:input={(event) =>
+                            updateCustomClause(customIndex, "title", inputValue(event))}
+                        />
+                      </div>
+                      <div class="field span-all">
+                        <label for={`custom_clause_content_${customIndex}`}>Conteudo da clausula</label>
+                        <textarea
+                          id={`custom_clause_content_${customIndex}`}
+                          value={customClause.content}
+                          placeholder="Texto completo da clausula customizada."
+                          on:input={(event) =>
+                            updateCustomClause(customIndex, "content", textareaValue(event))}
+                        ></textarea>
+                      </div>
+                    </div>
+
+                    <div class="inline-actions">
+                      <button class="btn ghost btn-sm" on:click={() => removeCustomClause(customIndex)}>
+                        Remover
+                      </button>
+                    </div>
+                  </div>
                 {/each}
               </div>
             {/if}
@@ -971,47 +1079,33 @@
     padding-top: 10px;
   }
 
-  .tag-list {
+  .linked-clause-list {
+    display: grid;
+    gap: 8px;
+  }
+
+  .linked-clause-card {
+    border: 1px solid #d7e5f6;
+    border-radius: 12px;
+    background: #f8fbff;
+    padding: 10px;
+    display: grid;
+    gap: 8px;
+  }
+
+  .linked-clause-title {
     display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
+    flex-direction: column;
+    gap: 2px;
   }
 
-  .tag-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    border: 1px solid #b8d0ef;
-    border-radius: 999px;
-    background: linear-gradient(140deg, #edf5ff 0%, #dcecff 100%);
-    color: #15365d;
-    padding: 6px 10px 6px 12px;
-    font-weight: 700;
-    max-width: 100%;
+  .linked-clause-title small {
+    color: #4f6686;
+    font-size: 0.8rem;
   }
 
-  .tag-pill span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: min(60vw, 360px);
-  }
-
-  .tag-remove {
-    width: 20px;
-    height: 20px;
-    border: 0;
-    border-radius: 999px;
-    background: #8da7cb;
-    color: #fff;
-    cursor: pointer;
-    font-size: 0.78rem;
-    line-height: 1;
-    padding: 0;
-  }
-
-  .tag-remove:hover {
-    background: #6f89af;
+  .linked-clause-card .inline-actions {
+    margin-top: 0;
   }
 
   .editor-subsection {

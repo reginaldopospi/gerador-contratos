@@ -31,15 +31,7 @@ func (s *Service) buildFullContract(numero, tipo string, data map[string]any) st
 
 	parts = append(parts, s.buildClauseLines(tipo, data)...)
 
-	selected := selectedClauseKeys(data)
-	if len(selected) > 0 {
-		parts = append(parts, "CLAUSULAS SELECIONADAS")
-		for idx, key := range selected {
-			parts = append(parts, fmt.Sprintf("%d) %s", idx+1, key))
-		}
-	}
-
-	return strings.Join(filterNonEmpty(parts...), "\n\n")
+	return strings.Join(filterNonEmpty(applyIndexedClauses(parts, collectIndexedClauses(data))...), "\n\n")
 }
 
 func (s *Service) buildObjetoCompleto(data map[string]any) string {
@@ -346,10 +338,312 @@ func collectSignatureNames(data map[string]any, listKey string) []string {
 	return uniqueStrings(out)
 }
 
-func selectedClauseKeys(data map[string]any) []string {
-	all := append(asStringList(data, "clausulas_selecionadas"), asStringList(data, "clause_keys")...)
-	all = append(all, asStringList(data, "clausulas_keys")...)
-	return uniqueStrings(all)
+type indexedClause struct {
+	Index   string
+	Title   string
+	Content string
+}
+
+func collectIndexedClauses(data map[string]any) []indexedClause {
+	out := make([]indexedClause, 0)
+	known := map[string]struct{}{}
+
+	for _, item := range getMapArray(data, "clausulas_selecionadas_vinculos") {
+		clauseKey := strings.TrimSpace(getString(item, "clause_key"))
+		if clauseKey == "" {
+			continue
+		}
+
+		title := strings.TrimSpace(getString(item, "title"))
+		if title == "" {
+			title = clauseKey
+		}
+
+		content := strings.TrimSpace(getString(item, "content"))
+		index := sanitizeClauseIndex(getString(item, "indice"))
+		if index == "" {
+			index = sanitizeClauseIndex(getString(item, "index"))
+		}
+
+		key := clauseKey + "@" + index
+		if _, ok := known[key]; ok {
+			continue
+		}
+		known[key] = struct{}{}
+		known[clauseKey+"@"] = struct{}{}
+
+		out = append(out, indexedClause{
+			Index:   index,
+			Title:   title,
+			Content: content,
+		})
+	}
+
+	selected := append(asStringList(data, "clausulas_selecionadas"), asStringList(data, "clause_keys")...)
+	selected = append(selected, asStringList(data, "clausulas_keys")...)
+	for _, key := range selected {
+		clauseKey := strings.TrimSpace(key)
+		if clauseKey == "" {
+			continue
+		}
+
+		composite := clauseKey + "@"
+		if _, ok := known[composite]; ok {
+			continue
+		}
+		known[composite] = struct{}{}
+
+		out = append(out, indexedClause{
+			Index:   "",
+			Title:   clauseKey,
+			Content: "",
+		})
+	}
+
+	for _, item := range getMapArray(data, "clausulas_customizadas") {
+		title := strings.TrimSpace(getString(item, "titulo"))
+		if title == "" {
+			title = strings.TrimSpace(getString(item, "title"))
+		}
+		content := strings.TrimSpace(getString(item, "conteudo"))
+		if content == "" {
+			content = strings.TrimSpace(getString(item, "content"))
+		}
+		index := sanitizeClauseIndex(getString(item, "indice"))
+		if index == "" {
+			index = sanitizeClauseIndex(getString(item, "index"))
+		}
+
+		if title == "" && content == "" {
+			continue
+		}
+
+		out = append(out, indexedClause{
+			Index:   index,
+			Title:   title,
+			Content: content,
+		})
+	}
+
+	return out
+}
+
+func applyIndexedClauses(baseLines []string, clauses []indexedClause) []string {
+	if len(clauses) == 0 {
+		return baseLines
+	}
+
+	indexedByParent := make(map[string][]indexedClause)
+	unindexed := make([]indexedClause, 0)
+
+	for _, clause := range clauses {
+		index := sanitizeClauseIndex(clause.Index)
+		if index == "" {
+			unindexed = append(unindexed, clause)
+			continue
+		}
+
+		parent := parentIndex(index)
+		if parent == "" {
+			unindexed = append(unindexed, clause)
+			continue
+		}
+
+		clause.Index = index
+		indexedByParent[parent] = append(indexedByParent[parent], clause)
+	}
+
+	for parent := range indexedByParent {
+		items := indexedByParent[parent]
+		sortIndexedClauses(items)
+		indexedByParent[parent] = items
+	}
+
+	out := make([]string, 0, len(baseLines)+len(clauses)+4)
+	for _, line := range baseLines {
+		out = append(out, line)
+
+		token := lineNumberToken(line)
+		if token == "" {
+			continue
+		}
+
+		items, ok := indexedByParent[token]
+		if !ok {
+			continue
+		}
+
+		for _, clause := range items {
+			out = append(out, renderIndexedClause(clause))
+		}
+		delete(indexedByParent, token)
+	}
+
+	for _, leftovers := range indexedByParent {
+		unindexed = append(unindexed, leftovers...)
+	}
+
+	if len(unindexed) > 0 {
+		out = append(out, "CLAUSULAS ADICIONAIS")
+		for i, clause := range unindexed {
+			out = append(out, fmt.Sprintf("A.%d %s", i+1, renderUnindexedClause(clause)))
+		}
+	}
+
+	return out
+}
+
+func renderIndexedClause(clause indexedClause) string {
+	title := strings.TrimSpace(clause.Title)
+	content := strings.TrimSpace(clause.Content)
+	if title == "" {
+		title = "CLAUSULA ADICIONAL"
+	}
+	if content == "" {
+		return fmt.Sprintf("%s %s", clause.Index, title)
+	}
+	return fmt.Sprintf("%s %s - %s", clause.Index, title, content)
+}
+
+func renderUnindexedClause(clause indexedClause) string {
+	title := strings.TrimSpace(clause.Title)
+	content := strings.TrimSpace(clause.Content)
+	if title == "" {
+		title = "CLAUSULA ADICIONAL"
+	}
+	if content == "" {
+		return title
+	}
+	return title + " - " + content
+}
+
+func parentIndex(index string) string {
+	clean := sanitizeClauseIndex(index)
+	if clean == "" {
+		return ""
+	}
+	parts := strings.Split(clean, ".")
+	if len(parts) <= 1 {
+		return clean
+	}
+	return strings.Join(parts[:len(parts)-1], ".")
+}
+
+func sanitizeClauseIndex(value string) string {
+	clean := strings.TrimSpace(value)
+	clean = strings.TrimSuffix(clean, ".")
+	clean = strings.ReplaceAll(clean, " ", "")
+	if clean == "" {
+		return ""
+	}
+
+	parts := strings.Split(clean, ".")
+	valid := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if !isDigits(part) {
+			return ""
+		}
+		valid = append(valid, part)
+	}
+	if len(valid) == 0 {
+		return ""
+	}
+	return strings.Join(valid, ".")
+}
+
+func lineNumberToken(line string) string {
+	fields := strings.Fields(strings.TrimSpace(line))
+	if len(fields) == 0 {
+		return ""
+	}
+	token := strings.TrimSpace(fields[0])
+	token = strings.TrimSuffix(token, ".")
+	return sanitizeClauseIndex(token)
+}
+
+func sortIndexedClauses(items []indexedClause) {
+	if len(items) < 2 {
+		return
+	}
+
+	for i := 0; i < len(items)-1; i += 1 {
+		for j := i + 1; j < len(items); j += 1 {
+			if compareClauseIndex(items[i].Index, items[j].Index) <= 0 {
+				continue
+			}
+			items[i], items[j] = items[j], items[i]
+		}
+	}
+}
+
+func compareClauseIndex(a, b string) int {
+	aa := strings.Split(a, ".")
+	bb := strings.Split(b, ".")
+	size := len(aa)
+	if len(bb) > size {
+		size = len(bb)
+	}
+
+	for i := 0; i < size; i += 1 {
+		av := -1
+		bv := -1
+		if i < len(aa) {
+			av = parseIntSafe(aa[i])
+		}
+		if i < len(bb) {
+			bv = parseIntSafe(bb[i])
+		}
+		if av < bv {
+			return -1
+		}
+		if av > bv {
+			return 1
+		}
+	}
+	return 0
+}
+
+func parseIntSafe(v string) int {
+	value := 0
+	for _, ch := range v {
+		if ch < '0' || ch > '9' {
+			return value
+		}
+		value = value*10 + int(ch-'0')
+	}
+	return value
+}
+
+func isDigits(v string) bool {
+	if v == "" {
+		return false
+	}
+	for _, ch := range v {
+		if ch < '0' || ch > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func getMapArray(data map[string]any, key string) []map[string]any {
+	raw := getSlice(data, key)
+	if len(raw) == 0 {
+		return nil
+	}
+
+	out := make([]map[string]any, 0, len(raw))
+	for _, item := range raw {
+		mapped, ok := item.(map[string]any)
+		if ok {
+			out = append(out, mapped)
+		}
+	}
+	return out
 }
 
 func asStringList(data map[string]any, key string) []string {

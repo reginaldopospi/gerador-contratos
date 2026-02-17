@@ -1,6 +1,9 @@
 package rules
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestBuildPreview_TitleWithFinancing(t *testing.T) {
 	svc := NewService()
@@ -44,5 +47,33 @@ func TestBuildPreview_DeliveryManualText(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected manual delivery text in sections: %#v", preview.Sections)
+	}
+}
+
+func TestBuildPreview_FullTextWithIndexedCustomClause(t *testing.T) {
+	svc := NewService()
+	preview := svc.BuildPreview("999", "Compromisso de Venda e Compra de Imovel", map[string]any{
+		"clausulas_customizadas": []any{
+			map[string]any{
+				"titulo":   "CLAUSULA X",
+				"conteudo": "Texto customizado de teste.",
+				"indice":   "1.1.2",
+			},
+		},
+		"clausulas_selecionadas_vinculos": []any{
+			map[string]any{
+				"clause_key": "multa_atraso",
+				"title":      "Multa por atraso",
+				"content":    "Aplica multa padrao.",
+				"indice":     "2.1.1",
+			},
+		},
+	})
+
+	if !strings.Contains(preview.FullText, "1.1.2 CLAUSULA X") {
+		t.Fatalf("expected indexed custom clause in full text")
+	}
+	if !strings.Contains(preview.FullText, "2.1.1 Multa por atraso") {
+		t.Fatalf("expected indexed selected clause in full text")
 	}
 }

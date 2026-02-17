@@ -12,6 +12,19 @@ export interface DeliveryClauseDraft {
   text: string;
 }
 
+export interface SelectedClauseDraft {
+  clauseKey: string;
+  title: string;
+  content: string;
+  index: string;
+}
+
+export interface CustomClauseDraft {
+  title: string;
+  content: string;
+  index: string;
+}
+
 export interface ExtraFieldDraft {
   key: string;
   type: ExtraFieldType;
@@ -21,7 +34,8 @@ export interface ExtraFieldDraft {
 export interface ContractEditorDraft {
   vendedores: PartyDraft[];
   compradores: PartyDraft[];
-  clausulasSelecionadas: string[];
+  clausulasSelecionadas: SelectedClauseDraft[];
+  clausulasCustomizadas: CustomClauseDraft[];
   imovelTipo: string;
   imovelEndereco: string;
   imovelMatricula: string;
@@ -51,6 +65,8 @@ export type DraftStringField = {
 
 const CLAUSES_KEY = "clausulas_entrega_chaves";
 const SELECTED_CLAUSES_KEY = "clausulas_selecionadas";
+const SELECTED_CLAUSES_LINKED_KEY = "clausulas_selecionadas_vinculos";
+const CUSTOM_CLAUSES_KEY = "clausulas_customizadas";
 const SELECTED_CLAUSES_ALIASES = ["clause_keys", "clausulas_keys"] as const;
 
 const FIELD_TO_DATA_KEY = {
@@ -81,6 +97,8 @@ const BASE_RESERVED_KEYS = new Set<string>([
   "compradores",
   CLAUSES_KEY,
   SELECTED_CLAUSES_KEY,
+  SELECTED_CLAUSES_LINKED_KEY,
+  CUSTOM_CLAUSES_KEY,
   ...SELECTED_CLAUSES_ALIASES
 ]);
 
@@ -106,6 +124,7 @@ export function emptyContractDraft(): ContractEditorDraft {
     vendedores: [{ ref: defaultPartyRef("vendedores", 1), nome: "", razaoSocial: "" }],
     compradores: [{ ref: defaultPartyRef("compradores", 1), nome: "", razaoSocial: "" }],
     clausulasSelecionadas: [],
+    clausulasCustomizadas: [],
     imovelTipo: "",
     imovelEndereco: "",
     imovelMatricula: "",
@@ -140,10 +159,8 @@ export function draftFromContractData(rawData: Record<string, unknown> | null | 
 
   draft.vendedores = buildPartyRows(data, "vendedores", SELLER_TOKENS);
   draft.compradores = buildPartyRows(data, "compradores", BUYER_TOKENS);
-  draft.clausulasSelecionadas = uniqueStrings([
-    ...asStringArray(data[SELECTED_CLAUSES_KEY]),
-    ...SELECTED_CLAUSES_ALIASES.flatMap((alias) => asStringArray(data[alias]))
-  ]);
+  draft.clausulasSelecionadas = buildSelectedClauseRows(data);
+  draft.clausulasCustomizadas = buildCustomClauseRows(data);
   draft.clausulasEntregaChaves = buildDeliveryClauseRows(data[CLAUSES_KEY]);
 
   const knownKeys = new Set<string>(BASE_RESERVED_KEYS);
@@ -185,8 +202,54 @@ export function buildContractData(draft: ContractEditorDraft): Record<string, un
   if (compradores.length > 0) {
     data.compradores = compradores;
   }
-  if (draft.clausulasSelecionadas.length > 0) {
-    data[SELECTED_CLAUSES_KEY] = uniqueStrings(draft.clausulasSelecionadas);
+
+  const selectedClauseKeys = uniqueStrings(
+    draft.clausulasSelecionadas.map((item) => cleanText(item.clauseKey))
+  );
+  if (selectedClauseKeys.length > 0) {
+    data[SELECTED_CLAUSES_KEY] = selectedClauseKeys;
+  }
+
+  const linkedSelectedClauses = draft.clausulasSelecionadas
+    .map((item) => {
+      const clauseKey = cleanText(item.clauseKey);
+      if (clauseKey === "") {
+        return null;
+      }
+      const index = cleanText(item.index);
+      if (!isValidClauseIndex(index)) {
+        throw new Error(`A clausula '${clauseKey}' precisa de um indice valido (ex.: 1.1.2).`);
+      }
+      return {
+        clause_key: clauseKey,
+        title: cleanText(item.title),
+        content: cleanText(item.content),
+        indice: index
+      };
+    })
+    .filter((item): item is { clause_key: string; title: string; content: string; indice: string } =>
+      item !== null
+    );
+  if (linkedSelectedClauses.length > 0) {
+    data[SELECTED_CLAUSES_LINKED_KEY] = linkedSelectedClauses;
+  }
+
+  const customClauses = draft.clausulasCustomizadas
+    .map((item) => {
+      const titulo = cleanText(item.title);
+      const conteudo = cleanText(item.content);
+      const indice = cleanText(item.index);
+      if (titulo === "" && conteudo === "") {
+        return null;
+      }
+      if (!isValidClauseIndex(indice)) {
+        throw new Error(`A clausula customizada '${titulo || "sem titulo"}' precisa de um indice valido (ex.: 1.1.2).`);
+      }
+      return { titulo, conteudo, indice };
+    })
+    .filter((item): item is { titulo: string; conteudo: string; indice: string } => item !== null);
+  if (customClauses.length > 0) {
+    data[CUSTOM_CLAUSES_KEY] = customClauses;
   }
 
   const clausulasEntrega: Record<string, string> = {};
@@ -329,6 +392,51 @@ function buildDeliveryClauseRows(raw: unknown): DeliveryClauseDraft[] {
     .filter((item) => cleanText(item.key) !== "");
 }
 
+function buildSelectedClauseRows(data: Record<string, unknown>): SelectedClauseDraft[] {
+  const linked = asRecordArray(data[SELECTED_CLAUSES_LINKED_KEY]).map((item) => ({
+    clauseKey: cleanText(getString(item, "clause_key")),
+    title: cleanText(getString(item, "title")),
+    content: cleanText(getString(item, "content")),
+    index: cleanText(getString(item, "indice") || getString(item, "index"))
+  }));
+
+  const selectedFromList = uniqueStrings([
+    ...asStringArray(data[SELECTED_CLAUSES_KEY]),
+    ...SELECTED_CLAUSES_ALIASES.flatMap((alias) => asStringArray(data[alias]))
+  ]);
+
+  const keyed = new Map<string, SelectedClauseDraft>();
+  for (const row of linked) {
+    if (row.clauseKey === "") {
+      continue;
+    }
+    keyed.set(row.clauseKey, row);
+  }
+
+  for (const clauseKey of selectedFromList) {
+    if (!keyed.has(clauseKey)) {
+      keyed.set(clauseKey, {
+        clauseKey,
+        title: "",
+        content: "",
+        index: ""
+      });
+    }
+  }
+
+  return [...keyed.values()].sort((a, b) => a.clauseKey.localeCompare(b.clauseKey));
+}
+
+function buildCustomClauseRows(data: Record<string, unknown>): CustomClauseDraft[] {
+  return asRecordArray(data[CUSTOM_CLAUSES_KEY])
+    .map((item) => ({
+      title: cleanText(getString(item, "titulo") || getString(item, "title")),
+      content: cleanText(getString(item, "conteudo") || getString(item, "content")),
+      index: cleanText(getString(item, "indice") || getString(item, "index"))
+    }))
+    .filter((item) => item.title !== "" || item.content !== "");
+}
+
 function mapToExtraField(key: string, value: unknown): ExtraFieldDraft {
   if (typeof value === "string") {
     return { key, type: "text", value };
@@ -409,6 +517,21 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
+function asRecordArray(value: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const out: Array<Record<string, unknown>> = [];
+  for (const item of value) {
+    const mapped = asRecord(item);
+    if (mapped) {
+      out.push(mapped);
+    }
+  }
+  return out;
+}
+
 function asStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
@@ -434,4 +557,8 @@ function getString(data: Record<string, unknown>, key: string): string {
 
 function cleanText(value: string): string {
   return value.trim();
+}
+
+function isValidClauseIndex(value: string): boolean {
+  return /^\d+(\.\d+)+$/.test(value.trim());
 }
