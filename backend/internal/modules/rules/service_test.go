@@ -73,7 +73,7 @@ func TestBuildPreview_FullTextWithIndexedCustomClause(t *testing.T) {
 	if !strings.Contains(preview.FullText, "1.1.2 CLAUSULA X") {
 		t.Fatalf("expected indexed custom clause in full text")
 	}
-	if !strings.Contains(preview.FullText, "2.1.1 Multa por atraso") {
-		t.Fatalf("expected indexed selected clause in full text")
+	if !strings.Contains(preview.FullText, "2.1.1 Aplica multa padrao.") {
+		t.Fatalf("expected indexed selected clause content in full text")
 	}
 }

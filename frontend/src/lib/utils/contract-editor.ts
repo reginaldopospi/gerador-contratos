@@ -395,8 +395,8 @@ function buildDeliveryClauseRows(raw: unknown): DeliveryClauseDraft[] {
 function buildSelectedClauseRows(data: Record<string, unknown>): SelectedClauseDraft[] {
   const linked = asRecordArray(data[SELECTED_CLAUSES_LINKED_KEY]).map((item) => ({
     clauseKey: cleanText(getString(item, "clause_key")),
-    title: cleanText(getString(item, "title")),
-    content: cleanText(getString(item, "content")),
+    title: cleanText(getString(item, "title") || getString(item, "titulo")),
+    content: cleanText(getString(item, "content") || getString(item, "conteudo")),
     index: cleanText(getString(item, "indice") || getString(item, "index"))
   }));
 

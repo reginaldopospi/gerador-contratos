@@ -56,6 +56,12 @@
     { key: "momentoPagto", label: "Momento do pagamento", placeholder: "Ex.: Na assinatura" }
   ];
 
+  $: {
+    const hydratedDraft = hydrateDraftClauseMetadata(draft, availableClauses);
+    if (hydratedDraft !== draft) {
+      draft = hydratedDraft;
+    }
+  }
   $: selectedClauseKeys = draft.clausulasSelecionadas.map((item) => item.clauseKey);
   $: clauseSuggestions = getClauseSuggestions(clauseSearch, availableClauses, selectedClauseKeys);
 
@@ -85,7 +91,7 @@
   }
 
   function applyVersion(version?: ContractVersion): void {
-    draft = draftFromContractData(version?.data ?? {});
+    draft = hydrateDraftClauseMetadata(draftFromContractData(version?.data ?? {}), availableClauses);
     selectedVersion = version?.version_number ?? 0;
   }
 
@@ -101,7 +107,11 @@
     }
 
     try {
-      const data = buildContractData(draft);
+      const hydratedDraft = hydrateDraftClauseMetadata(draft, availableClauses);
+      if (hydratedDraft !== draft) {
+        draft = hydratedDraft;
+      }
+      const data = buildContractData(hydratedDraft);
       preview = await api.previewContractFromData({
         numero: details.contract.numero,
         tipo: details.contract.tipo,
@@ -129,7 +139,11 @@
     success = "";
 
     try {
-      const data = buildContractData(draft);
+      const hydratedDraft = hydrateDraftClauseMetadata(draft, availableClauses);
+      if (hydratedDraft !== draft) {
+        draft = hydratedDraft;
+      }
+      const data = buildContractData(hydratedDraft);
       await api.addContractVersion(params.id, data);
       await load();
       success = "Nova versao salva com sucesso.";
@@ -374,6 +388,38 @@
 
   function textareaValue(event: Event): string {
     return (event.currentTarget as HTMLTextAreaElement).value;
+  }
+
+  function hydrateDraftClauseMetadata(
+    source: ContractEditorDraft,
+    clauses: ClauseTemplate[]
+  ): ContractEditorDraft {
+    if (source.clausulasSelecionadas.length === 0 || clauses.length === 0) {
+      return source;
+    }
+
+    const clausesByKey = new Map(clauses.map((item) => [item.clause_key, item]));
+    let hasChanges = false;
+    const selected = source.clausulasSelecionadas.map((item) => {
+      const template = clausesByKey.get(item.clauseKey);
+      if (!template) {
+        return item;
+      }
+
+      const nextTitle = item.title.trim() === "" ? template.title : item.title;
+      const nextContent = item.content.trim() === "" ? template.content : item.content;
+      if (nextTitle === item.title && nextContent === item.content) {
+        return item;
+      }
+
+      hasChanges = true;
+      return { ...item, title: nextTitle, content: nextContent };
+    });
+
+    if (!hasChanges) {
+      return source;
+    }
+    return { ...source, clausulasSelecionadas: selected };
   }
 </script>
 

@@ -356,10 +356,16 @@ func collectIndexedClauses(data map[string]any) []indexedClause {
 
 		title := strings.TrimSpace(getString(item, "title"))
 		if title == "" {
+			title = strings.TrimSpace(getString(item, "titulo"))
+		}
+		if title == "" {
 			title = clauseKey
 		}
 
 		content := strings.TrimSpace(getString(item, "content"))
+		if content == "" {
+			content = strings.TrimSpace(getString(item, "conteudo"))
+		}
 		index := sanitizeClauseIndex(getString(item, "indice"))
 		if index == "" {
 			index = sanitizeClauseIndex(getString(item, "index"))
@@ -496,25 +502,25 @@ func applyIndexedClauses(baseLines []string, clauses []indexedClause) []string {
 func renderIndexedClause(clause indexedClause) string {
 	title := strings.TrimSpace(clause.Title)
 	content := strings.TrimSpace(clause.Content)
+	if content != "" {
+		return fmt.Sprintf("%s %s", clause.Index, content)
+	}
 	if title == "" {
 		title = "CLAUSULA ADICIONAL"
 	}
-	if content == "" {
-		return fmt.Sprintf("%s %s", clause.Index, title)
-	}
-	return fmt.Sprintf("%s %s - %s", clause.Index, title, content)
+	return fmt.Sprintf("%s %s", clause.Index, title)
 }
 
 func renderUnindexedClause(clause indexedClause) string {
 	title := strings.TrimSpace(clause.Title)
 	content := strings.TrimSpace(clause.Content)
+	if content != "" {
+		return content
+	}
 	if title == "" {
 		title = "CLAUSULA ADICIONAL"
 	}
-	if content == "" {
-		return title
-	}
-	return title + " - " + content
+	return title
 }
 
 func parentIndex(index string) string {

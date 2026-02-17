@@ -59,6 +59,28 @@ describe("draftFromContractData", () => {
     expect(extraBool?.type).toBe("boolean");
     expect(extraJson?.type).toBe("json");
   });
+
+  it("deve aceitar aliases titulo/conteudo nas clausulas selecionadas vinculadas", () => {
+    const draft = draftFromContractData({
+      clausulas_selecionadas_vinculos: [
+        {
+          clause_key: "clausula_extra",
+          titulo: "Clausula extra",
+          conteudo: "Texto completo da clausula extra.",
+          indice: "1.2.1"
+        }
+      ]
+    });
+
+    expect(draft.clausulasSelecionadas).toEqual([
+      {
+        clauseKey: "clausula_extra",
+        title: "Clausula extra",
+        content: "Texto completo da clausula extra.",
+        index: "1.2.1"
+      }
+    ]);
+  });
 });
 
 describe("buildContractData", () => {
