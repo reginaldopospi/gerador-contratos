@@ -4,7 +4,8 @@ import type {
   Broker,
   ClauseTemplate,
   Contract,
-  ContractDetails
+  ContractDetails,
+  ContractPreview
 } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080/api/v1";
@@ -182,8 +183,8 @@ export const api = {
     });
   },
 
-  async previewContract(contractID: string): Promise<{ title: string; sections: string[] }> {
-    const response = await request<{ preview: { title: string; sections: string[] } }>(
+  async previewContract(contractID: string): Promise<ContractPreview> {
+    const response = await request<{ preview: ContractPreview }>(
       `/contracts/${contractID}/preview`
     );
     return response.preview;
@@ -193,8 +194,8 @@ export const api = {
     numero: string;
     tipo: string;
     data: Record<string, unknown>;
-  }): Promise<{ title: string; sections: string[] }> {
-    const response = await request<{ preview: { title: string; sections: string[] } }>(
+  }): Promise<ContractPreview> {
+    const response = await request<{ preview: ContractPreview }>(
       "/contracts/preview",
       {
         method: "POST",

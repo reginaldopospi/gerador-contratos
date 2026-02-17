@@ -8,6 +8,7 @@ import (
 type Preview struct {
 	Title    string   `json:"title"`
 	Sections []string `json:"sections"`
+	FullText string   `json:"full_text,omitempty"`
 }
 
 type Service struct {
@@ -58,7 +59,11 @@ func (s *Service) BuildPreview(numero, tipo string, data map[string]any) Preview
 		"Comissao e intermediacao: " + comissao,
 	}
 
-	return Preview{Title: title, Sections: sections}
+	return Preview{
+		Title:    title,
+		Sections: sections,
+		FullText: s.buildFullContract(numero, tipo, data),
+	}
 }
 
 func (s *Service) tipoJuridicoContrato(tipo, financiamento string) string {

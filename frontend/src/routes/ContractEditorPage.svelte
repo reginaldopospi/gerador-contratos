@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api, APIError } from "../lib/api";
-  import type { ClauseTemplate, ContractDetails, ContractVersion } from "../lib/types";
+  import type { ClauseTemplate, ContractDetails, ContractPreview, ContractVersion } from "../lib/types";
   import {
     buildContractData,
     defaultPartyRef,
@@ -18,7 +18,7 @@
   export let params: { id: string };
 
   let details: ContractDetails | null = null;
-  let preview: { title: string; sections: string[] } | null = null;
+  let preview: ContractPreview | null = null;
   let draft: ContractEditorDraft = emptyContractDraft();
   let availableClauses: ClauseTemplate[] = [];
   let clauseSearch = "";
@@ -788,11 +788,15 @@
     {/if}
     {#if preview}
       <h3>{preview.title}</h3>
-      <ol class="list-tight">
-        {#each preview.sections as section}
-          <li>{section}</li>
-        {/each}
-      </ol>
+      {#if preview.full_text}
+        <article class="full-contract-preview">{preview.full_text}</article>
+      {:else}
+        <ol class="list-tight">
+          {#each preview.sections as section}
+            <li>{section}</li>
+          {/each}
+        </ol>
+      {/if}
     {:else}
       <p>Sem previa disponivel.</p>
     {/if}
@@ -928,6 +932,88 @@
     margin-top: 8px;
   }
 
+  .clause-suggestion-list {
+    border: 1px solid #d8e5f6;
+    border-radius: 12px;
+    background: #f8fbff;
+    display: grid;
+    gap: 6px;
+    padding: 8px;
+    max-height: 260px;
+    overflow-y: auto;
+  }
+
+  .clause-suggestion-item {
+    border: 1px solid #d0dff2;
+    border-radius: 10px;
+    padding: 8px 10px;
+    background: #fff;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .clause-suggestion-item:hover {
+    border-color: #22a18f;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
+  }
+
+  .clause-suggestion-item small {
+    color: #4f6686;
+    font-size: 0.8rem;
+  }
+
+  .clause-tags-area {
+    border-top: 1px solid #dce8f6;
+    padding-top: 10px;
+  }
+
+  .tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .tag-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid #b8d0ef;
+    border-radius: 999px;
+    background: linear-gradient(140deg, #edf5ff 0%, #dcecff 100%);
+    color: #15365d;
+    padding: 6px 10px 6px 12px;
+    font-weight: 700;
+    max-width: 100%;
+  }
+
+  .tag-pill span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: min(60vw, 360px);
+  }
+
+  .tag-remove {
+    width: 20px;
+    height: 20px;
+    border: 0;
+    border-radius: 999px;
+    background: #8da7cb;
+    color: #fff;
+    cursor: pointer;
+    font-size: 0.78rem;
+    line-height: 1;
+    padding: 0;
+  }
+
+  .tag-remove:hover {
+    background: #6f89af;
+  }
+
   .editor-subsection {
     border-top: 1px solid #dce8f6;
     padding-top: 12px;
@@ -966,6 +1052,17 @@
     min-height: 88px;
     font-family: "Cascadia Code", "Consolas", monospace;
     font-size: 0.86rem;
+  }
+
+  .full-contract-preview {
+    margin-top: 10px;
+    border: 1px solid #d5e3f5;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.92);
+    padding: 14px;
+    white-space: pre-wrap;
+    line-height: 1.6;
+    font-size: 0.95rem;
   }
 
   .btn-sm {

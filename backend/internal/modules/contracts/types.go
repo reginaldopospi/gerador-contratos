@@ -25,6 +25,7 @@ type ContractVersion struct {
 type ContractPreview struct {
 	Title    string   `json:"title"`
 	Sections []string `json:"sections"`
+	FullText string   `json:"full_text,omitempty"`
 }
 
 type CreateContractInput struct {

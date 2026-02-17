@@ -140,6 +140,7 @@ func (s *Service) PreviewLatest(ctx context.Context, actor auth.AuthClaims, cont
 	return &ContractPreview{
 		Title:    preview.Title,
 		Sections: preview.Sections,
+		FullText: preview.FullText,
 	}, nil
 }
 
@@ -152,7 +153,11 @@ func (s *Service) PreviewFromData(numero, tipo string, data map[string]any) (*Co
 	}
 
 	preview := s.rules.BuildPreview(numero, tipo, data)
-	return &ContractPreview{Title: preview.Title, Sections: preview.Sections}, nil
+	return &ContractPreview{
+		Title:    preview.Title,
+		Sections: preview.Sections,
+		FullText: preview.FullText,
+	}, nil
 }
 
 func (s *Service) GetVersion(ctx context.Context, actor auth.AuthClaims, contractID string, versionNumber int) (*ContractVersion, error) {

@@ -41,6 +41,12 @@ export interface ContractDetails {
   versions: ContractVersion[];
 }
 
+export interface ContractPreview {
+  title: string;
+  sections: string[];
+  full_text?: string;
+}
+
 export interface Broker {
   id: string;
   nome: string;
