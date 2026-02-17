@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { Document, HeadingLevel, Packer, Paragraph } from "docx";
   import { api, APIError } from "../lib/api";
   import type { ClauseTemplate, ContractDetails, ContractPreview, ContractVersion } from "../lib/types";
   import {
@@ -27,6 +28,7 @@
   let loading = false;
   let saving = false;
   let previewing = false;
+  let downloadingDocx = false;
   let error = "";
   let success = "";
 
@@ -157,6 +159,58 @@
       }
     } finally {
       saving = false;
+    }
+  }
+
+  async function downloadContractDocx(): Promise<void> {
+    if (!details) {
+      return;
+    }
+
+    downloadingDocx = true;
+    error = "";
+    success = "";
+
+    try {
+      const hydratedDraft = hydrateDraftClauseMetadata(draft, availableClauses);
+      if (hydratedDraft !== draft) {
+        draft = hydratedDraft;
+      }
+
+      const data = buildContractData(hydratedDraft);
+      const latestPreview = await api.previewContractFromData({
+        numero: details.contract.numero,
+        tipo: details.contract.tipo,
+        data
+      });
+      preview = latestPreview;
+
+      const contractText = buildContractText(latestPreview);
+      if (contractText.trim() === "") {
+        throw new Error("Nao foi possivel montar o contrato para exportacao.");
+      }
+
+      const documentBody = new Document({
+        sections: [
+          {
+            children: buildContractParagraphs(latestPreview.title, contractText)
+          }
+        ]
+      });
+
+      const blob = await Packer.toBlob(documentBody);
+      triggerBlobDownload(blob, buildDocxFilename(details.contract.numero, details.contract.tipo));
+      success = "Contrato DOCX baixado com sucesso.";
+    } catch (err) {
+      if (err instanceof APIError) {
+        error = err.message;
+      } else if (err instanceof Error) {
+        error = err.message;
+      } else {
+        error = "Falha ao baixar contrato em DOCX";
+      }
+    } finally {
+      downloadingDocx = false;
     }
   }
 
@@ -388,6 +442,66 @@
 
   function textareaValue(event: Event): string {
     return (event.currentTarget as HTMLTextAreaElement).value;
+  }
+
+  function buildContractText(contractPreview: ContractPreview): string {
+    const fullText = (contractPreview.full_text ?? "").trim();
+    if (fullText !== "") {
+      return fullText;
+    }
+    return contractPreview.sections.join("\n\n").trim();
+  }
+
+  function buildContractParagraphs(title: string, text: string): Paragraph[] {
+    const paragraphs: Paragraph[] = [];
+    const normalizedTitle = title.trim();
+    if (normalizedTitle !== "") {
+      paragraphs.push(
+        new Paragraph({
+          heading: HeadingLevel.HEADING_1,
+          text: normalizedTitle
+        })
+      );
+      paragraphs.push(new Paragraph({ text: " " }));
+    }
+
+    for (const line of text.split(/\r?\n/)) {
+      paragraphs.push(
+        new Paragraph({
+          text: line === "" ? " " : line
+        })
+      );
+    }
+
+    return paragraphs;
+  }
+
+  function triggerBlobDownload(blob: Blob, fileName: string): void {
+    const blobUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = blobUrl;
+    anchor.download = fileName;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(blobUrl);
+  }
+
+  function buildDocxFilename(numero: string, tipo: string): string {
+    const numberPart = sanitizeFilenamePart(numero) || "sem-numero";
+    const typePart = sanitizeFilenamePart(tipo) || "contrato";
+    return `contrato-${numberPart}-${typePart}.docx`;
+  }
+
+  function sanitizeFilenamePart(value: string): string {
+    return value
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60);
   }
 
   function hydrateDraftClauseMetadata(
@@ -923,6 +1037,13 @@
         </button>
         <button class="btn ghost" disabled={previewing} on:click={() => refreshPreview(true)}>
           {previewing ? "Gerando previa..." : "Gerar previa agora"}
+        </button>
+        <button
+          class="btn ghost"
+          disabled={downloadingDocx || previewing}
+          on:click={downloadContractDocx}
+        >
+          {downloadingDocx ? "Gerando DOCX..." : "Baixar DOCX"}
         </button>
       </div>
 

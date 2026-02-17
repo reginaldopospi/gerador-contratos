@@ -11,6 +11,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "docx": "^9.5.3",
     "svelte": "^5.33.1",
     "svelte-spa-router": "^4.0.1"
   },
