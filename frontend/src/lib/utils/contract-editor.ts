@@ -37,9 +37,25 @@ export interface ContractEditorDraft {
   clausulasSelecionadas: SelectedClauseDraft[];
   clausulasCustomizadas: CustomClauseDraft[];
   imovelTipo: string;
+  imovelCep: string;
+  imovelLogradouro: string;
+  imovelNumero: string;
+  imovelComplemento: string;
+  imovelBairro: string;
+  imovelCidade: string;
+  imovelUf: string;
   imovelEndereco: string;
   imovelMatricula: string;
   imovelCartorio: string;
+  imovelCidadeCartorio: string;
+  imovelContribuinte: string;
+  imovelParFar: string;
+  imovelAlienado: string;
+  imovelAlugado: string;
+  imovelLocacao: string;
+  imovelFicaraBens: string;
+  imovelBens: string;
+  imovelDescricaoMatricula: string;
   precoTotal: string;
   precoFinanciamento: string;
   precoFgts: string;
@@ -71,9 +87,25 @@ const SELECTED_CLAUSES_ALIASES = ["clause_keys", "clausulas_keys"] as const;
 
 const FIELD_TO_DATA_KEY = {
   imovelTipo: "imovel__tipo",
+  imovelCep: "imovel__end__cep",
+  imovelLogradouro: "imovel__end__logradouro",
+  imovelNumero: "imovel__end__numero",
+  imovelComplemento: "imovel__end__complemento",
+  imovelBairro: "imovel__end__bairro",
+  imovelCidade: "imovel__end__cidade",
+  imovelUf: "imovel__end__uf",
   imovelEndereco: "imovel__end__texto",
   imovelMatricula: "imovel__matricula",
   imovelCartorio: "imovel__cartorio",
+  imovelCidadeCartorio: "imovel__cidade_cartorio",
+  imovelContribuinte: "imovel__contribuinte",
+  imovelParFar: "imovel__par_far",
+  imovelAlienado: "imovel__alienado",
+  imovelAlugado: "imovel__alugado",
+  imovelLocacao: "imovel__locacao",
+  imovelFicaraBens: "imovel__ficara_bens",
+  imovelBens: "imovel__bens",
+  imovelDescricaoMatricula: "imovel__descricao_matricula",
   precoTotal: "preco_total",
   precoFinanciamento: "preco_financiamento",
   precoFgts: "preco_fgts",
@@ -104,6 +136,12 @@ const BASE_RESERVED_KEYS = new Set<string>([
 
 const SELLER_TOKENS = ["vendedor", "cedente"];
 const BUYER_TOKENS = ["comprador", "cessionario", "cessionaria"];
+const PROPERTY_YES_NO_FIELDS = new Set<DraftStringField>([
+  "imovelParFar",
+  "imovelAlienado",
+  "imovelAlugado",
+  "imovelFicaraBens"
+]);
 
 export const DELIVERY_OPTIONS = [
   "30 dias apos credito em conta",
@@ -119,6 +157,59 @@ export function defaultPartyRef(role: PartyRole, index: number): string {
   return role === "vendedores" ? `vendedor_${index}` : `comprador_${index}`;
 }
 
+// Mantem a mesma regra do app Python para montar "Endereco completo (gerado)".
+export function buildPropertyAddressText(
+  draft: Pick<
+    ContractEditorDraft,
+    | "imovelCep"
+    | "imovelLogradouro"
+    | "imovelNumero"
+    | "imovelComplemento"
+    | "imovelBairro"
+    | "imovelCidade"
+    | "imovelUf"
+  >
+): string {
+  const logradouro = cleanText(draft.imovelLogradouro);
+  const numero = cleanText(draft.imovelNumero);
+  const complemento = cleanText(draft.imovelComplemento);
+  const bairro = cleanText(draft.imovelBairro);
+  const cidade = cleanText(draft.imovelCidade);
+  const uf = cleanText(draft.imovelUf);
+  const cep = cleanText(draft.imovelCep);
+
+  const parts: string[] = [];
+  if (logradouro !== "") {
+    parts.push(logradouro);
+  }
+  if (numero !== "") {
+    parts.push(`n.o ${numero}`);
+  }
+  if (complemento !== "") {
+    parts.push(complemento);
+  }
+  if (bairro !== "") {
+    parts.push(bairro);
+  }
+  if (cidade !== "" && uf !== "") {
+    parts.push(`${cidade}/${uf}`);
+  } else if (cidade !== "") {
+    parts.push(cidade);
+  } else if (uf !== "") {
+    parts.push(uf);
+  }
+
+  let text = parts.join(", ");
+  if (cep !== "") {
+    text = text === "" ? `CEP: ${cep}` : `${text} - CEP: ${cep}`;
+  }
+  return text.trim();
+}
+
+export function isMatriculaAreaMaior(tipoImovel: string): boolean {
+  return cleanText(tipoImovel).toLowerCase().includes("matricula em area maior");
+}
+
 export function emptyContractDraft(): ContractEditorDraft {
   return {
     vendedores: [{ ref: defaultPartyRef("vendedores", 1), nome: "", razaoSocial: "" }],
@@ -126,9 +217,25 @@ export function emptyContractDraft(): ContractEditorDraft {
     clausulasSelecionadas: [],
     clausulasCustomizadas: [],
     imovelTipo: "",
+    imovelCep: "",
+    imovelLogradouro: "",
+    imovelNumero: "",
+    imovelComplemento: "",
+    imovelBairro: "",
+    imovelCidade: "",
+    imovelUf: "",
     imovelEndereco: "",
     imovelMatricula: "",
     imovelCartorio: "",
+    imovelCidadeCartorio: "",
+    imovelContribuinte: "",
+    imovelParFar: "NAO",
+    imovelAlienado: "NAO",
+    imovelAlugado: "NAO",
+    imovelLocacao: "",
+    imovelFicaraBens: "NAO",
+    imovelBens: "",
+    imovelDescricaoMatricula: "",
     precoTotal: "",
     precoFinanciamento: "",
     precoFgts: "",
@@ -154,7 +261,15 @@ export function draftFromContractData(rawData: Record<string, unknown> | null | 
   const draft = emptyContractDraft();
 
   (Object.keys(FIELD_TO_DATA_KEY) as Array<keyof typeof FIELD_TO_DATA_KEY>).forEach((field) => {
-    draft[field] = getString(data, FIELD_TO_DATA_KEY[field]);
+    const rawValue = getString(data, FIELD_TO_DATA_KEY[field]);
+    if (PROPERTY_YES_NO_FIELDS.has(field)) {
+      const normalized = normalizeYesNo(rawValue);
+      if (normalized !== "") {
+        draft[field] = normalized;
+      }
+      return;
+    }
+    draft[field] = rawValue;
   });
 
   draft.vendedores = buildPartyRows(data, "vendedores", SELLER_TOKENS);
@@ -191,6 +306,17 @@ export function buildContractData(draft: ContractEditorDraft): Record<string, un
     if (value !== "") {
       data[dataKey] = value;
     }
+  }
+
+  // Se houver endereco estruturado, ele prevalece sobre o texto manual.
+  const generatedPropertyAddress = buildPropertyAddressText(draft);
+  if (generatedPropertyAddress !== "") {
+    data[FIELD_TO_DATA_KEY.imovelEndereco] = generatedPropertyAddress;
+  }
+
+  // Replica a regra do Python: tipo "matricula em area maior" nao envia descricao.
+  if (isMatriculaAreaMaior(draft.imovelTipo)) {
+    delete data[FIELD_TO_DATA_KEY.imovelDescricaoMatricula];
   }
 
   const vendedores = writePartyData(data, draft.vendedores, "vendedores");
@@ -557,6 +683,21 @@ function getString(data: Record<string, unknown>, key: string): string {
 
 function cleanText(value: string): string {
   return value.trim();
+}
+
+function normalizeYesNo(value: string): string {
+  // Remove acentos para aceitar entradas como "NÃO" e persistir em formato unico.
+  const normalized = cleanText(value)
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (normalized === "SIM") {
+    return "SIM";
+  }
+  if (normalized === "NAO") {
+    return "NAO";
+  }
+  return "";
 }
 
 function isValidClauseIndex(value: string): boolean {

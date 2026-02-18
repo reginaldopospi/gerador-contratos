@@ -29,6 +29,10 @@ describe("draftFromContractData", () => {
       "vend_1__nome": "Ana Maria",
       "comp_1__razao_social": "Empresa XP LTDA",
       imovel__tipo: "Apartamento",
+      imovel__end__cidade: "Guarulhos",
+      imovel__end__uf: "SP",
+      imovel__par_far: "NÃO",
+      imovel__alienado: "SIM",
       clausulas_entrega_chaves: {
         "Na vistoria final": "Entrega apos vistoria assinada."
       },
@@ -49,6 +53,10 @@ describe("draftFromContractData", () => {
     expect(draft.clausulasCustomizadas[0].title).toBe("Clausula X");
     expect(draft.clausulasCustomizadas[0].index).toBe("2.1.1");
     expect(draft.imovelTipo).toBe("Apartamento");
+    expect(draft.imovelCidade).toBe("Guarulhos");
+    expect(draft.imovelUf).toBe("SP");
+    expect(draft.imovelParFar).toBe("NAO");
+    expect(draft.imovelAlienado).toBe("SIM");
     expect(draft.clausulasEntregaChaves[0].key).toBe("Na vistoria final");
 
     const extraNumero = draft.extras.find((item) => item.key === "prioridade");
@@ -109,7 +117,14 @@ describe("buildContractData", () => {
         index: "2.1.1"
       }
     ];
-    draft.imovelTipo = "Casa";
+    draft.imovelTipo = "Casa em condominio (matricula em area maior)";
+    draft.imovelCep = "08663-040";
+    draft.imovelLogradouro = "Rua Exemplo";
+    draft.imovelNumero = "245";
+    draft.imovelBairro = "Vila Teste";
+    draft.imovelCidade = "Guarulhos";
+    draft.imovelUf = "SP";
+    draft.imovelDescricaoMatricula = "Nao deve ser enviada para area maior";
     draft.precoTotal = "R$ 350.000,00";
     draft.entregaChaves = "Escrever no contrato";
     draft.entregaChavesTexto = "Entrega em ate 5 dias apos quitacao.";
@@ -148,7 +163,10 @@ describe("buildContractData", () => {
         indice: "2.1.1"
       }
     ]);
-    expect(data.imovel__tipo).toBe("Casa");
+    expect(data.imovel__tipo).toBe("Casa em condominio (matricula em area maior)");
+    // Endereco completo deve ser gerado a partir dos campos detalhados.
+    expect(data.imovel__end__texto).toBe("Rua Exemplo, n.o 245, Vila Teste, Guarulhos/SP - CEP: 08663-040");
+    expect(data.imovel__descricao_matricula).toBeUndefined();
     expect(data.preco_total).toBe("R$ 350.000,00");
     expect(data.entrega_chaves_texto).toContain("5 dias");
     expect(data.aceita_permuta).toBe(true);

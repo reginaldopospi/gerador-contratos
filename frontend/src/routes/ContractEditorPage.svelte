@@ -2,13 +2,21 @@
   import { onMount } from "svelte";
   import { Document, HeadingLevel, Packer, Paragraph } from "docx";
   import { api, APIError } from "../lib/api";
+  import {
+    formatCep,
+    isCompleteCep,
+    lookupAddressByCep,
+    onlyCepDigits
+  } from "../lib/utils/cep";
   import type { ClauseTemplate, ContractDetails, ContractPreview, ContractVersion } from "../lib/types";
   import {
+    buildPropertyAddressText,
     buildContractData,
     defaultPartyRef,
     DELIVERY_OPTIONS,
     draftFromContractData,
     emptyContractDraft,
+    isMatriculaAreaMaior,
     type ContractEditorDraft,
     type DraftStringField,
     type ExtraFieldType,
@@ -31,12 +39,55 @@
   let downloadingDocx = false;
   let error = "";
   let success = "";
+  let generatedPropertyAddress = "";
+  let propertyAddressPreview = "";
+  let hideMatriculaDescription = false;
+  let cepLookupStatus: "idle" | "loading" | "error" | "success" = "idle";
+  let cepLookupMessage = "";
+  let cepLookupRequestId = 0;
+  let lastFetchedCep = "";
 
-  const propertyFields: Array<{ key: DraftStringField; label: string; placeholder: string }> = [
-    { key: "imovelTipo", label: "Tipo do imovel", placeholder: "Ex.: Apartamento residencial" },
-    { key: "imovelEndereco", label: "Endereco completo", placeholder: "Rua, numero, bairro, cidade/UF" },
-    { key: "imovelMatricula", label: "Matricula", placeholder: "Ex.: 12345" },
-    { key: "imovelCartorio", label: "Cartorio", placeholder: "Ex.: 1o Registro de Imoveis" }
+  type PropertyToggleField = "imovelParFar" | "imovelAlienado" | "imovelAlugado" | "imovelFicaraBens";
+
+  // Replica as opcoes de tipo de imovel usadas no app Python.
+  const PROPERTY_TYPE_OPTIONS = [
+    "imovel",
+    "apartamento",
+    "apartamento (matricula em area maior)",
+    "sobrado",
+    "sobrado em condominio",
+    "sobrado em condominio (matricula em area maior)",
+    "casa",
+    "casa em condominio",
+    "casa em condominio (matricula em area maior)",
+    "terreno",
+    "outro"
+  ] as const;
+
+  const YES_NO_OPTIONS = ["NAO", "SIM"] as const;
+
+  const propertyAddressFields: Array<{ key: DraftStringField; label: string; placeholder: string }> = [
+    { key: "imovelCep", label: "CEP", placeholder: "Ex.: 08663-040" },
+    { key: "imovelLogradouro", label: "Logradouro", placeholder: "Rua, avenida..." },
+    { key: "imovelNumero", label: "Numero", placeholder: "Ex.: 123" },
+    { key: "imovelComplemento", label: "Complemento", placeholder: "Ex.: Apto 42" },
+    { key: "imovelBairro", label: "Bairro", placeholder: "Ex.: Centro" },
+    { key: "imovelCidade", label: "Cidade", placeholder: "Ex.: Guarulhos" },
+    { key: "imovelUf", label: "UF", placeholder: "Ex.: SP" }
+  ];
+
+  const propertyIdentificationFields: Array<{ key: DraftStringField; label: string; placeholder: string }> = [
+    { key: "imovelMatricula", label: "N.o matricula", placeholder: "Ex.: 12345" },
+    { key: "imovelCartorio", label: "N.o do cartorio", placeholder: "Ex.: 2" },
+    { key: "imovelCidadeCartorio", label: "Cidade do cartorio", placeholder: "Ex.: Guarulhos" },
+    { key: "imovelContribuinte", label: "N.o do contribuinte", placeholder: "Ex.: 123.456.789.000" }
+  ];
+
+  const propertyToggleFields: Array<{ key: PropertyToggleField; label: string }> = [
+    { key: "imovelParFar", label: "Imovel do PAR ou FAR?" },
+    { key: "imovelAlienado", label: "Alienado fiduciariamente?" },
+    { key: "imovelAlugado", label: "O imovel esta locado a terceiros?" },
+    { key: "imovelFicaraBens", label: "Ficara bens no imovel?" }
   ];
 
   const paymentFields: Array<{ key: DraftStringField; label: string; placeholder: string }> = [
@@ -66,6 +117,9 @@
   }
   $: selectedClauseKeys = draft.clausulasSelecionadas.map((item) => item.clauseKey);
   $: clauseSuggestions = getClauseSuggestions(clauseSearch, availableClauses, selectedClauseKeys);
+  $: generatedPropertyAddress = buildPropertyAddressText(draft);
+  $: propertyAddressPreview = generatedPropertyAddress !== "" ? generatedPropertyAddress : draft.imovelEndereco;
+  $: hideMatriculaDescription = isMatriculaAreaMaior(draft.imovelTipo);
 
   async function load(): Promise<void> {
     loading = true;
@@ -245,7 +299,103 @@
   }
 
   function updateField(key: DraftStringField, value: string): void {
-    draft = { ...draft, [key]: value } as ContractEditorDraft;
+    const nextDraft = { ...draft, [key]: value } as ContractEditorDraft;
+
+    // Mantem a regra do Python para autocompletar cidade do cartorio em SP.
+    if (
+      (key === "imovelCidade" || key === "imovelUf") &&
+      nextDraft.imovelUf.trim().toUpperCase() === "SP" &&
+      nextDraft.imovelCidade.trim() !== "" &&
+      nextDraft.imovelCidadeCartorio.trim() === ""
+    ) {
+      nextDraft.imovelCidadeCartorio = nextDraft.imovelCidade;
+    }
+
+    // Mantem a regra de "matricula em area maior" sem descricao.
+    if (key === "imovelTipo" && isMatriculaAreaMaior(value)) {
+      nextDraft.imovelDescricaoMatricula = "";
+    }
+
+    draft = nextDraft;
+  }
+
+  function handleCepInput(event: Event): void {
+    const formatted = formatCep(inputValue(event));
+    updateField("imovelCep", formatted);
+
+    if (!isCompleteCep(formatted)) {
+      cepLookupStatus = "idle";
+      cepLookupMessage = "";
+      return;
+    }
+
+    void fillAddressFromCep(formatted);
+  }
+
+  async function fillAddressFromCep(cepValue: string): Promise<void> {
+    const digits = onlyCepDigits(cepValue);
+    if (!isCompleteCep(digits)) {
+      return;
+    }
+
+    // Evita buscar repetidamente o mesmo CEP quando os campos principais ja foram preenchidos.
+    if (
+      digits === lastFetchedCep &&
+      draft.imovelLogradouro.trim() !== "" &&
+      draft.imovelBairro.trim() !== "" &&
+      draft.imovelCidade.trim() !== "" &&
+      draft.imovelUf.trim() !== ""
+    ) {
+      return;
+    }
+
+    const requestId = ++cepLookupRequestId;
+    cepLookupStatus = "loading";
+    cepLookupMessage = "Buscando endereco pelo CEP...";
+
+    try {
+      const result = await lookupAddressByCep(digits);
+      if (requestId !== cepLookupRequestId) {
+        return;
+      }
+
+      if (!result) {
+        cepLookupStatus = "error";
+        cepLookupMessage = "CEP nao encontrado no ViaCEP.";
+        return;
+      }
+
+      const nextDraft: ContractEditorDraft = {
+        ...draft,
+        imovelCep: result.cep !== "" ? result.cep : formatCep(digits),
+        imovelLogradouro: result.logradouro !== "" ? result.logradouro : draft.imovelLogradouro,
+        imovelComplemento: result.complemento !== "" ? result.complemento : draft.imovelComplemento,
+        imovelBairro: result.bairro !== "" ? result.bairro : draft.imovelBairro,
+        imovelCidade: result.cidade !== "" ? result.cidade : draft.imovelCidade,
+        imovelUf: result.uf !== "" ? result.uf : draft.imovelUf
+      };
+
+      if (
+        nextDraft.imovelUf.trim().toUpperCase() === "SP" &&
+        nextDraft.imovelCidade.trim() !== "" &&
+        nextDraft.imovelCidadeCartorio.trim() === ""
+      ) {
+        nextDraft.imovelCidadeCartorio = nextDraft.imovelCidade;
+      }
+
+      draft = nextDraft;
+      lastFetchedCep = digits;
+      cepLookupStatus = "success";
+      cepLookupMessage = "Endereco preenchido automaticamente pelo CEP.";
+    } catch (lookupErr) {
+      if (requestId !== cepLookupRequestId) {
+        return;
+      }
+
+      cepLookupStatus = "error";
+      cepLookupMessage =
+        lookupErr instanceof Error ? lookupErr.message : "Nao foi possivel consultar o CEP agora.";
+    }
   }
 
   function addParty(role: PartyRole): void {
@@ -442,6 +592,10 @@
 
   function textareaValue(event: Event): string {
     return (event.currentTarget as HTMLTextAreaElement).value;
+  }
+
+  function isKnownPropertyType(value: string): boolean {
+    return PROPERTY_TYPE_OPTIONS.includes(value as (typeof PROPERTY_TYPE_OPTIONS)[number]);
   }
 
   function buildContractText(contractPreview: ContractPreview): string {
@@ -680,18 +834,153 @@
             <p>Dados essenciais do objeto contratual.</p>
           </div>
 
-          <div class="grid cols-2">
-            {#each propertyFields as field}
-              <div class="field">
-                <label for={`property_${field.key}`}>{field.label}</label>
-                <input
-                  id={`property_${field.key}`}
-                  value={draft[field.key]}
-                  placeholder={field.placeholder}
-                  on:input={(event) => updateField(field.key, inputValue(event))}
-                />
+          <div class="property-layout">
+            <div class="property-column">
+              <h4>Endereco do imovel</h4>
+
+              <div class="grid cols-2">
+                {#each propertyAddressFields as field}
+                  <div class="field">
+                    <label for={`property_${field.key}`}>{field.label}</label>
+                    {#if field.key === "imovelCep"}
+                      <input
+                        id={`property_${field.key}`}
+                        value={draft[field.key]}
+                        placeholder={field.placeholder}
+                        on:input={handleCepInput}
+                      />
+                      {#if cepLookupStatus === "loading"}
+                        <small class="field-feedback info">{cepLookupMessage}</small>
+                      {:else if cepLookupStatus === "error"}
+                        <small class="field-feedback error">{cepLookupMessage}</small>
+                      {:else if cepLookupStatus === "success"}
+                        <small class="field-feedback info">{cepLookupMessage}</small>
+                      {/if}
+                    {:else}
+                      <input
+                        id={`property_${field.key}`}
+                        value={draft[field.key]}
+                        placeholder={field.placeholder}
+                        on:input={(event) => updateField(field.key, inputValue(event))}
+                      />
+                    {/if}
+                  </div>
+                {/each}
               </div>
-            {/each}
+
+              <div class="field">
+                <label for="property_imovelEndereco">Endereco completo (gerado)</label>
+                <textarea id="property_imovelEndereco" value={propertyAddressPreview} rows="3" disabled></textarea>
+              </div>
+            </div>
+
+            <div class="property-column">
+              <h4>Identificacao</h4>
+
+              <div class="field">
+                <label for="property_imovelTipo">Tipo do imovel</label>
+                <select
+                  id="property_imovelTipo"
+                  value={draft.imovelTipo}
+                  on:change={(event) => updateField("imovelTipo", selectValue(event))}
+                >
+                  <option value="">Selecione</option>
+                  {#if draft.imovelTipo.trim() !== "" && !isKnownPropertyType(draft.imovelTipo)}
+                    <option value={draft.imovelTipo}>{draft.imovelTipo}</option>
+                  {/if}
+                  {#each PROPERTY_TYPE_OPTIONS as option}
+                    <option value={option}>{option}</option>
+                  {/each}
+                </select>
+              </div>
+
+              <div class="grid cols-2">
+                {#each propertyIdentificationFields as field}
+                  <div class="field">
+                    <label for={`property_${field.key}`}>{field.label}</label>
+                    <input
+                      id={`property_${field.key}`}
+                      value={draft[field.key]}
+                      placeholder={field.placeholder}
+                      on:input={(event) => updateField(field.key, inputValue(event))}
+                    />
+                  </div>
+                {/each}
+              </div>
+
+              <div class="editor-subsection">
+                <h4>Informacoes adicionais</h4>
+
+                <div class="property-toggle-grid">
+                  {#each propertyToggleFields as field}
+                    <div class="field">
+                      <span class="field-static-label">{field.label}</span>
+                      <div class="radio-inline">
+                        {#each YES_NO_OPTIONS as option}
+                          <label>
+                            <input
+                              type="radio"
+                              name={`property_${field.key}`}
+                              value={option}
+                              checked={draft[field.key] === option}
+                              on:change={(event) => updateField(field.key, inputValue(event))}
+                            />
+                            <span>{option}</span>
+                          </label>
+                        {/each}
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+
+                {#if draft.imovelAlugado === "SIM"}
+                  <div class="field">
+                    <label for="property_imovelLocacao">
+                      O inquilino vai desocupar o imovel ou a parte compradora vai assumir a locacao?
+                    </label>
+                    <textarea
+                      id="property_imovelLocacao"
+                      value={draft.imovelLocacao}
+                      rows="4"
+                      on:input={(event) => updateField("imovelLocacao", textareaValue(event))}
+                    ></textarea>
+                  </div>
+                {/if}
+
+                {#if draft.imovelFicaraBens === "SIM"}
+                  <div class="field">
+                    <label for="property_imovelBens">
+                      O que ficara no imovel? (indicar somente os bens)
+                    </label>
+                    <textarea
+                      id="property_imovelBens"
+                      value={draft.imovelBens}
+                      rows="4"
+                      on:input={(event) => updateField("imovelBens", textareaValue(event))}
+                    ></textarea>
+                  </div>
+                {/if}
+              </div>
+            </div>
+          </div>
+
+          <div class="editor-subsection">
+            <h4>Descricao do imovel na matricula</h4>
+
+            {#if hideMatriculaDescription}
+              <div class="notice info">
+                Regra aplicada: nao lancar descricao do imovel para tipo com matricula em area maior.
+              </div>
+            {:else}
+              <div class="field">
+                <textarea
+                  id="property_imovelDescricaoMatricula"
+                  value={draft.imovelDescricaoMatricula}
+                  rows="6"
+                  on:input={(event) => updateField("imovelDescricaoMatricula", textareaValue(event))}
+                ></textarea>
+              </div>
+            {/if}
           </div>
         </section>
 
@@ -1199,6 +1488,70 @@
     border-radius: 12px;
     background: #f9fbff;
     padding: 10px;
+  }
+
+  .property-layout {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  }
+
+  .property-column {
+    display: grid;
+    gap: 10px;
+  }
+
+  .property-column h4 {
+    margin: 0;
+    font-size: 1rem;
+  }
+
+  .property-toggle-grid {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  }
+
+  .radio-inline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .field-static-label {
+    font-weight: 700;
+    font-size: 0.92rem;
+    color: #304b6c;
+  }
+
+  .field-feedback {
+    display: block;
+    margin-top: 4px;
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+
+  .field-feedback.info {
+    color: #1d4ed8;
+  }
+
+  .field-feedback.error {
+    color: #b91c1c;
+  }
+
+  .radio-inline label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    color: #304b6c;
+  }
+
+  .radio-inline input {
+    width: auto;
+    min-width: auto;
+    max-width: none;
+    margin: 0;
   }
 
   .inline-actions {
