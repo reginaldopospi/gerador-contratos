@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildContractData,
   draftFromContractData,
+  emptyPartyDraft,
   emptyContractDraft
 } from "../lib/utils/contract-editor";
 
@@ -27,6 +28,10 @@ describe("draftFromContractData", () => {
         }
       ],
       "vend_1__nome": "Ana Maria",
+      "vend_1__tipo": "Pessoa Fisica",
+      "vend_1__cpf": "111.222.333-44",
+      "vend_1__estado_civil": "uniao estavel",
+      "vend_1__end__cidade": "Suzano",
       "comp_1__razao_social": "Empresa XP LTDA",
       imovel__tipo: "Apartamento",
       imovel__end__cidade: "Guarulhos",
@@ -43,6 +48,10 @@ describe("draftFromContractData", () => {
 
     expect(draft.vendedores[0].nome).toBe("Ana Maria");
     expect(draft.compradores[0].razaoSocial).toBe("Empresa XP LTDA");
+    expect(draft.vendedores[0].tipo).toBe("Pessoa Fisica");
+    expect(draft.vendedores[0].cpf).toBe("111.222.333-44");
+    expect(draft.vendedores[0].estadoCivil).toBe("uniao estavel");
+    expect(draft.vendedores[0].endCidade).toBe("Suzano");
     expect(draft.clausulasSelecionadas.map((item) => item.clauseKey)).toEqual([
       "foro_eleicao",
       "multa_atraso"
@@ -94,8 +103,15 @@ describe("draftFromContractData", () => {
 describe("buildContractData", () => {
   it("deve converter o rascunho visual em payload de versao", () => {
     const draft = emptyContractDraft();
-    draft.vendedores = [{ ref: "vend_1", nome: "Ana", razaoSocial: "" }];
-    draft.compradores = [{ ref: "comp_1", nome: "", razaoSocial: "Comprador SA" }];
+    draft.vendedores = [{ ...emptyPartyDraft("vendedores", 1), ref: "vend_1", nome: "Ana" }];
+    draft.compradores = [{ ...emptyPartyDraft("compradores", 1), ref: "comp_1", razaoSocial: "Comprador SA" }];
+    draft.vendedores[0].cpf = "111.222.333-44";
+    draft.vendedores[0].estadoCivil = "casado(a)";
+    draft.vendedores[0].conjNome = "Maria";
+    draft.vendedores[0].conjCpf = "555.666.777-88";
+    draft.compradores[0].tipo = "Pessoa Juridica";
+    draft.compradores[0].cnpj = "12.345.678/0001-99";
+    draft.compradores[0].repNome = "Joao";
     draft.clausulasSelecionadas = [
       {
         clauseKey: "multa_atraso",
@@ -141,6 +157,12 @@ describe("buildContractData", () => {
     expect(data.compradores).toEqual(["comp_1"]);
     expect(data["vend_1__nome"]).toBe("Ana");
     expect(data["comp_1__razao_social"]).toBe("Comprador SA");
+    expect(data["vend_1__tipo"]).toBe("Pessoa Fisica");
+    expect(data["vend_1__cpf"]).toBe("111.222.333-44");
+    expect(data["vend_1__conj_nome"]).toBe("Maria");
+    expect(data["comp_1__tipo"]).toBe("Pessoa Juridica");
+    expect(data["comp_1__cnpj"]).toBe("12.345.678/0001-99");
+    expect(data["comp_1__rep_nome"]).toBe("Joao");
     expect(data.clausulas_selecionadas).toEqual(["multa_atraso", "foro_eleicao"]);
     expect(data.clausulas_selecionadas_vinculos).toEqual([
       {

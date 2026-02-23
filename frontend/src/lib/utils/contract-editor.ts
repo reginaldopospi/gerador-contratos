@@ -1,10 +1,37 @@
 export type PartyRole = "vendedores" | "compradores";
 export type ExtraFieldType = "text" | "number" | "boolean" | "json";
+export type PartyType = "Pessoa Fisica" | "Pessoa Juridica";
 
 export interface PartyDraft {
   ref: string;
+  tipo: PartyType;
   nome: string;
   razaoSocial: string;
+  nacionalidade: string;
+  nacionalidadeOutra: string;
+  rg: string;
+  cpf: string;
+  profissao: string;
+  estadoCivil: string;
+  regimeBens: string;
+  regimeBensOutro: string;
+  conjNome: string;
+  conjNacionalidade: string;
+  conjNacionalidadeOutra: string;
+  conjProfissao: string;
+  conjRg: string;
+  conjCpf: string;
+  cnpj: string;
+  repNome: string;
+  repCpf: string;
+  endCep: string;
+  endLogradouro: string;
+  endNumero: string;
+  endComplemento: string;
+  endBairro: string;
+  endCidade: string;
+  endUf: string;
+  endTexto: string;
 }
 
 export interface DeliveryClauseDraft {
@@ -134,14 +161,54 @@ const BASE_RESERVED_KEYS = new Set<string>([
   ...SELECTED_CLAUSES_ALIASES
 ]);
 
-const SELLER_TOKENS = ["vendedor", "cedente"];
-const BUYER_TOKENS = ["comprador", "cessionario", "cessionaria"];
+const PARTY_FIELD_SUFFIXES = [
+  "tipo",
+  "nome",
+  "razao_social",
+  "nacionalidade",
+  "nacionalidade_outra",
+  "rg",
+  "cpf",
+  "profissao",
+  "estado_civil",
+  "regime_bens",
+  "regime_bens_outro",
+  "conj_nome",
+  "conj_nacionalidade",
+  "conj_nacionalidade_outra",
+  "conj_profissao",
+  "conj_rg",
+  "conj_cpf",
+  "cnpj",
+  "rep_nome",
+  "rep_cpf",
+  "end__cep",
+  "end__logradouro",
+  "end__numero",
+  "end__complemento",
+  "end__bairro",
+  "end__cidade",
+  "end__uf",
+  "end__texto"
+] as const;
+
+const SELLER_TOKENS = ["vendedor", "cedente", "vend"];
+const BUYER_TOKENS = ["comprador", "cessionario", "cessionaria", "comp"];
 const PROPERTY_YES_NO_FIELDS = new Set<DraftStringField>([
   "imovelParFar",
   "imovelAlienado",
   "imovelAlugado",
   "imovelFicaraBens"
 ]);
+const PARTY_TYPE_FISICA: PartyType = "Pessoa Fisica";
+const PARTY_TYPE_JURIDICA: PartyType = "Pessoa Juridica";
+const PARTY_ESTADO_CIVIL_OPTIONS = [
+  "solteiro(a)",
+  "casado(a)",
+  "uniao estavel",
+  "divorciado(a)",
+  "viuvo(a)"
+] as const;
 
 export const DELIVERY_OPTIONS = [
   "30 dias apos credito em conta",
@@ -157,26 +224,76 @@ export function defaultPartyRef(role: PartyRole, index: number): string {
   return role === "vendedores" ? `vendedor_${index}` : `comprador_${index}`;
 }
 
-// Mantem a mesma regra do app Python para montar "Endereco completo (gerado)".
-export function buildPropertyAddressText(
-  draft: Pick<
-    ContractEditorDraft,
-    | "imovelCep"
-    | "imovelLogradouro"
-    | "imovelNumero"
-    | "imovelComplemento"
-    | "imovelBairro"
-    | "imovelCidade"
-    | "imovelUf"
-  >
-): string {
-  const logradouro = cleanText(draft.imovelLogradouro);
-  const numero = cleanText(draft.imovelNumero);
-  const complemento = cleanText(draft.imovelComplemento);
-  const bairro = cleanText(draft.imovelBairro);
-  const cidade = cleanText(draft.imovelCidade);
-  const uf = cleanText(draft.imovelUf);
-  const cep = cleanText(draft.imovelCep);
+export function emptyPartyDraft(role: PartyRole, index: number): PartyDraft {
+  return {
+    ref: defaultPartyRef(role, index),
+    tipo: PARTY_TYPE_FISICA,
+    nome: "",
+    razaoSocial: "",
+    nacionalidade: "brasileiro",
+    nacionalidadeOutra: "",
+    rg: "",
+    cpf: "",
+    profissao: "",
+    estadoCivil: "solteiro(a)",
+    regimeBens: "",
+    regimeBensOutro: "",
+    conjNome: "",
+    conjNacionalidade: "brasileiro",
+    conjNacionalidadeOutra: "",
+    conjProfissao: "",
+    conjRg: "",
+    conjCpf: "",
+    cnpj: "",
+    repNome: "",
+    repCpf: "",
+    endCep: "",
+    endLogradouro: "",
+    endNumero: "",
+    endComplemento: "",
+    endBairro: "",
+    endCidade: "",
+    endUf: "",
+    endTexto: ""
+  };
+}
+
+export function normalizePartyType(value: string): PartyType {
+  const normalized = cleanText(value)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (normalized.includes("juridica")) {
+    return PARTY_TYPE_JURIDICA;
+  }
+  return PARTY_TYPE_FISICA;
+}
+
+export function isPartyEstadoCivilComConjuge(estadoCivil: string): boolean {
+  const normalized = cleanText(estadoCivil)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  return normalized === "casado(a)" || normalized === "uniao estavel";
+}
+
+// Reutiliza o mesmo formato de endereco completo usado no app Python.
+export function buildAddressText(input: {
+  cep: string;
+  logradouro: string;
+  numero: string;
+  complemento: string;
+  bairro: string;
+  cidade: string;
+  uf: string;
+}): string {
+  const logradouro = cleanText(input.logradouro);
+  const numero = cleanText(input.numero);
+  const complemento = cleanText(input.complemento);
+  const bairro = cleanText(input.bairro);
+  const cidade = cleanText(input.cidade);
+  const uf = cleanText(input.uf);
+  const cep = cleanText(input.cep);
 
   const parts: string[] = [];
   if (logradouro !== "") {
@@ -206,14 +323,38 @@ export function buildPropertyAddressText(
   return text.trim();
 }
 
+// Mantem a mesma regra do app Python para montar "Endereco completo (gerado)".
+export function buildPropertyAddressText(
+  draft: Pick<
+    ContractEditorDraft,
+    | "imovelCep"
+    | "imovelLogradouro"
+    | "imovelNumero"
+    | "imovelComplemento"
+    | "imovelBairro"
+    | "imovelCidade"
+    | "imovelUf"
+  >
+): string {
+  return buildAddressText({
+    cep: draft.imovelCep,
+    logradouro: draft.imovelLogradouro,
+    numero: draft.imovelNumero,
+    complemento: draft.imovelComplemento,
+    bairro: draft.imovelBairro,
+    cidade: draft.imovelCidade,
+    uf: draft.imovelUf
+  });
+}
+
 export function isMatriculaAreaMaior(tipoImovel: string): boolean {
   return cleanText(tipoImovel).toLowerCase().includes("matricula em area maior");
 }
 
 export function emptyContractDraft(): ContractEditorDraft {
   return {
-    vendedores: [{ ref: defaultPartyRef("vendedores", 1), nome: "", razaoSocial: "" }],
-    compradores: [{ ref: defaultPartyRef("compradores", 1), nome: "", razaoSocial: "" }],
+    vendedores: [emptyPartyDraft("vendedores", 1)],
+    compradores: [emptyPartyDraft("compradores", 1)],
     clausulasSelecionadas: [],
     clausulasCustomizadas: [],
     imovelTipo: "",
@@ -280,12 +421,10 @@ export function draftFromContractData(rawData: Record<string, unknown> | null | 
 
   const knownKeys = new Set<string>(BASE_RESERVED_KEYS);
   for (const party of draft.vendedores) {
-    knownKeys.add(`${party.ref}__nome`);
-    knownKeys.add(`${party.ref}__razao_social`);
+    addPartyKnownKeys(knownKeys, party.ref);
   }
   for (const party of draft.compradores) {
-    knownKeys.add(`${party.ref}__nome`);
-    knownKeys.add(`${party.ref}__razao_social`);
+    addPartyKnownKeys(knownKeys, party.ref);
   }
 
   draft.extras = Object.keys(data)
@@ -413,9 +552,7 @@ function writePartyData(
 
   for (let index = 0; index < parties.length; index += 1) {
     const party = parties[index];
-    const nome = cleanText(party.nome);
-    const razao = cleanText(party.razaoSocial);
-    if (nome === "" && razao === "") {
+    if (!partyHasAnyData(party)) {
       continue;
     }
 
@@ -426,12 +563,61 @@ function writePartyData(
     ref = uniqueRef(ref, refs);
     refs.push(ref);
 
+    const tipo = normalizePartyType(party.tipo);
+    const nome = cleanText(party.nome);
+    const razao = cleanText(party.razaoSocial);
+    const endereco = buildAddressText({
+      cep: party.endCep,
+      logradouro: party.endLogradouro,
+      numero: party.endNumero,
+      complemento: party.endComplemento,
+      bairro: party.endBairro,
+      cidade: party.endCidade,
+      uf: party.endUf
+    });
+    const enderecoFinal = endereco !== "" ? endereco : cleanText(party.endTexto);
+
+    data[`${ref}__tipo`] = tipo;
     if (nome !== "") {
       data[`${ref}__nome`] = nome;
     }
     if (razao !== "") {
       data[`${ref}__razao_social`] = razao;
     }
+
+    if (tipo === PARTY_TYPE_JURIDICA) {
+      writeIfText(data, `${ref}__cnpj`, party.cnpj);
+      writeIfText(data, `${ref}__rep_nome`, party.repNome);
+      writeIfText(data, `${ref}__rep_cpf`, party.repCpf);
+    } else {
+      writeIfText(data, `${ref}__nacionalidade`, party.nacionalidade);
+      writeIfText(data, `${ref}__nacionalidade_outra`, party.nacionalidadeOutra);
+      writeIfText(data, `${ref}__rg`, party.rg);
+      writeIfText(data, `${ref}__cpf`, party.cpf);
+      writeIfText(data, `${ref}__profissao`, party.profissao);
+
+      const estadoCivil = sanitizePartyEstadoCivil(party.estadoCivil);
+      writeIfText(data, `${ref}__estado_civil`, estadoCivil);
+      if (isPartyEstadoCivilComConjuge(estadoCivil)) {
+        writeIfText(data, `${ref}__regime_bens`, party.regimeBens);
+        writeIfText(data, `${ref}__regime_bens_outro`, party.regimeBensOutro);
+        writeIfText(data, `${ref}__conj_nome`, party.conjNome);
+        writeIfText(data, `${ref}__conj_nacionalidade`, party.conjNacionalidade);
+        writeIfText(data, `${ref}__conj_nacionalidade_outra`, party.conjNacionalidadeOutra);
+        writeIfText(data, `${ref}__conj_profissao`, party.conjProfissao);
+        writeIfText(data, `${ref}__conj_rg`, party.conjRg);
+        writeIfText(data, `${ref}__conj_cpf`, party.conjCpf);
+      }
+    }
+
+    writeIfText(data, `${ref}__end__cep`, party.endCep);
+    writeIfText(data, `${ref}__end__logradouro`, party.endLogradouro);
+    writeIfText(data, `${ref}__end__numero`, party.endNumero);
+    writeIfText(data, `${ref}__end__complemento`, party.endComplemento);
+    writeIfText(data, `${ref}__end__bairro`, party.endBairro);
+    writeIfText(data, `${ref}__end__cidade`, party.endCidade);
+    writeIfText(data, `${ref}__end__uf`, party.endUf);
+    writeIfText(data, `${ref}__end__texto`, enderecoFinal);
   }
 
   return refs;
@@ -459,14 +645,10 @@ function buildPartyRows(
 
   const refs = uniqueStrings([...listedRefs, ...inferredRefs]);
   if (refs.length === 0) {
-    return [{ ref: defaultPartyRef(role, 1), nome: "", razaoSocial: "" }];
+    return [emptyPartyDraft(role, 1)];
   }
 
-  return refs.map((ref) => ({
-    ref,
-    nome: getString(data, `${ref}__nome`),
-    razaoSocial: getString(data, `${ref}__razao_social`)
-  }));
+  return refs.map((ref, index) => buildPartyDraftFromData(data, role, ref, index + 1));
 }
 
 function inferPartyRefs(data: Record<string, unknown>, tokens: readonly string[]): string[] {
@@ -474,12 +656,16 @@ function inferPartyRefs(data: Record<string, unknown>, tokens: readonly string[]
   const keys = Object.keys(data);
 
   for (const key of keys) {
-    const match = /^(.+)__(nome|razao_social)$/.exec(key);
+    const match = /^(.+?)__(.+)$/.exec(key);
     if (!match) {
       continue;
     }
 
     const ref = match[1];
+    const suffix = match[2];
+    if (!isPartySuffix(suffix)) {
+      continue;
+    }
     const lowered = ref.toLowerCase();
     if (!tokens.some((token) => lowered.includes(token))) {
       continue;
@@ -488,6 +674,108 @@ function inferPartyRefs(data: Record<string, unknown>, tokens: readonly string[]
   }
 
   return uniqueStrings(refs);
+}
+
+function buildPartyDraftFromData(
+  data: Record<string, unknown>,
+  role: PartyRole,
+  ref: string,
+  index: number
+): PartyDraft {
+  const party = emptyPartyDraft(role, index);
+  party.ref = cleanText(ref) || defaultPartyRef(role, index);
+  party.tipo = normalizePartyType(getString(data, `${ref}__tipo`));
+  party.nome = getString(data, `${ref}__nome`);
+  party.razaoSocial = getString(data, `${ref}__razao_social`);
+  party.nacionalidade = getString(data, `${ref}__nacionalidade`) || party.nacionalidade;
+  party.nacionalidadeOutra = getString(data, `${ref}__nacionalidade_outra`);
+  party.rg = getString(data, `${ref}__rg`);
+  party.cpf = getString(data, `${ref}__cpf`);
+  party.profissao = getString(data, `${ref}__profissao`);
+  party.estadoCivil =
+    sanitizePartyEstadoCivil(getString(data, `${ref}__estado_civil`)) || party.estadoCivil;
+  party.regimeBens = getString(data, `${ref}__regime_bens`);
+  party.regimeBensOutro = getString(data, `${ref}__regime_bens_outro`);
+  party.conjNome = getString(data, `${ref}__conj_nome`);
+  party.conjNacionalidade =
+    getString(data, `${ref}__conj_nacionalidade`) || party.conjNacionalidade;
+  party.conjNacionalidadeOutra = getString(data, `${ref}__conj_nacionalidade_outra`);
+  party.conjProfissao = getString(data, `${ref}__conj_profissao`);
+  party.conjRg = getString(data, `${ref}__conj_rg`);
+  party.conjCpf = getString(data, `${ref}__conj_cpf`);
+  party.cnpj = getString(data, `${ref}__cnpj`);
+  party.repNome = getString(data, `${ref}__rep_nome`);
+  party.repCpf = getString(data, `${ref}__rep_cpf`);
+  party.endCep = getString(data, `${ref}__end__cep`);
+  party.endLogradouro = getString(data, `${ref}__end__logradouro`);
+  party.endNumero = getString(data, `${ref}__end__numero`);
+  party.endComplemento = getString(data, `${ref}__end__complemento`);
+  party.endBairro = getString(data, `${ref}__end__bairro`);
+  party.endCidade = getString(data, `${ref}__end__cidade`);
+  party.endUf = getString(data, `${ref}__end__uf`);
+  party.endTexto = getString(data, `${ref}__end__texto`);
+  return party;
+}
+
+function addPartyKnownKeys(knownKeys: Set<string>, ref: string): void {
+  const cleanRef = cleanText(ref);
+  if (cleanRef === "") {
+    return;
+  }
+  for (const suffix of PARTY_FIELD_SUFFIXES) {
+    knownKeys.add(`${cleanRef}__${suffix}`);
+  }
+}
+
+function isPartySuffix(suffix: string): boolean {
+  return PARTY_FIELD_SUFFIXES.includes(suffix as (typeof PARTY_FIELD_SUFFIXES)[number]);
+}
+
+function sanitizePartyEstadoCivil(value: string): string {
+  const normalized = cleanText(value)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  const matched = PARTY_ESTADO_CIVIL_OPTIONS.find((item) => item === normalized);
+  return matched ?? cleanText(value);
+}
+
+function partyHasAnyData(party: PartyDraft): boolean {
+  const values = [
+    party.nome,
+    party.razaoSocial,
+    party.nacionalidadeOutra,
+    party.rg,
+    party.cpf,
+    party.profissao,
+    party.regimeBens,
+    party.regimeBensOutro,
+    party.conjNome,
+    party.conjNacionalidadeOutra,
+    party.conjProfissao,
+    party.conjRg,
+    party.conjCpf,
+    party.cnpj,
+    party.repNome,
+    party.repCpf,
+    party.endCep,
+    party.endLogradouro,
+    party.endNumero,
+    party.endComplemento,
+    party.endBairro,
+    party.endCidade,
+    party.endUf,
+    party.endTexto
+  ];
+  return values.some((value) => cleanText(value) !== "");
+}
+
+function writeIfText(data: Record<string, unknown>, key: string, value: string): void {
+  const clean = cleanText(value);
+  if (clean === "") {
+    return;
+  }
+  data[key] = clean;
 }
 
 function uniqueStrings(values: string[]): string[] {

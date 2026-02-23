@@ -8,18 +8,28 @@
     lookupAddressByCep,
     onlyCepDigits
   } from "../lib/utils/cep";
+  import {
+    formatCnpj,
+    isCompleteCnpj,
+    lookupCompanyByCnpj,
+    onlyCnpjDigits
+  } from "../lib/utils/cnpj";
   import type { ClauseTemplate, ContractDetails, ContractPreview, ContractVersion } from "../lib/types";
   import {
     buildPropertyAddressText,
+    buildAddressText,
     buildContractData,
-    defaultPartyRef,
     DELIVERY_OPTIONS,
     draftFromContractData,
     emptyContractDraft,
+    emptyPartyDraft,
+    isPartyEstadoCivilComConjuge,
     isMatriculaAreaMaior,
+    normalizePartyType,
     type ContractEditorDraft,
     type DraftStringField,
     type ExtraFieldType,
+    type PartyDraft,
     type PartyRole
   } from "../lib/utils/contract-editor";
   import { requireAuth } from "../lib/utils/guards";
@@ -46,6 +56,11 @@
   let cepLookupMessage = "";
   let cepLookupRequestId = 0;
   let lastFetchedCep = "";
+  let partyConditionalErrors: string[] = [];
+  let hasPartyConditionalBlockers = false;
+  let partyCnpjLookup = new Map<string, { status: "idle" | "loading" | "error" | "success"; message: string }>();
+  const partyCnpjLookupRequestIds = new Map<string, number>();
+  const partyLastFetchedCnpj = new Map<string, string>();
 
   type PropertyToggleField = "imovelParFar" | "imovelAlienado" | "imovelAlugado" | "imovelFicaraBens";
 
@@ -90,6 +105,51 @@
     { key: "imovelFicaraBens", label: "Ficara bens no imovel?" }
   ];
 
+  const PARTY_TYPE_OPTIONS = ["Pessoa Fisica", "Pessoa Juridica"] as const;
+  const PARTY_NACIONALIDADE_OPTIONS = [
+    "brasileiro",
+    "brasileira",
+    "portuguesa",
+    "portugues",
+    "italiana",
+    "italiano",
+    "espanhola",
+    "espanhol",
+    "argentina",
+    "argentino",
+    "americana",
+    "americano",
+    "alema",
+    "alemao",
+    "francesa",
+    "frances",
+    "japonesa",
+    "japones",
+    "chinesa",
+    "chines",
+    "outra (escrever)"
+  ] as const;
+  const PARTY_ESTADO_CIVIL_OPTIONS = [
+    "solteiro(a)",
+    "casado(a)",
+    "uniao estavel",
+    "divorciado(a)",
+    "viuvo(a)"
+  ] as const;
+  const PARTY_REGIME_BENS_OPTIONS = [
+    "comunhao parcial de bens",
+    "comunhao universal de bens",
+    "separacao total de bens",
+    "participacao final nos aquestos",
+    "outro (escrever)"
+  ] as const;
+  const PARTY_OTHER_OPTION = "outra (escrever)";
+  const PARTY_REGIME_OTHER_OPTION = "outro (escrever)";
+  const PARTY_SECTIONS: Array<{ role: PartyRole; title: string; idPrefix: string }> = [
+    { role: "vendedores", title: "Parte vendedora / cedente", idPrefix: "seller" },
+    { role: "compradores", title: "Parte compradora / cessionaria", idPrefix: "buyer" }
+  ];
+
   const paymentFields: Array<{ key: DraftStringField; label: string; placeholder: string }> = [
     { key: "precoTotal", label: "Preco total", placeholder: "R$ 450.000,00" },
     { key: "precoFinanciamento", label: "Financiamento", placeholder: "R$ 300.000,00" },
@@ -120,6 +180,8 @@
   $: generatedPropertyAddress = buildPropertyAddressText(draft);
   $: propertyAddressPreview = generatedPropertyAddress !== "" ? generatedPropertyAddress : draft.imovelEndereco;
   $: hideMatriculaDescription = isMatriculaAreaMaior(draft.imovelTipo);
+  $: partyConditionalErrors = collectPartyConditionalErrors(draft);
+  $: hasPartyConditionalBlockers = partyConditionalErrors.length > 0;
 
   async function load(): Promise<void> {
     loading = true;
@@ -153,6 +215,9 @@
 
   async function refreshPreview(showNotice: boolean): Promise<void> {
     if (!details) {
+      return;
+    }
+    if (!ensureNoPartyConditionalBlockers()) {
       return;
     }
 
@@ -190,6 +255,10 @@
   }
 
   async function saveNewVersion(): Promise<void> {
+    if (!ensureNoPartyConditionalBlockers()) {
+      return;
+    }
+
     saving = true;
     error = "";
     success = "";
@@ -218,6 +287,9 @@
 
   async function downloadContractDocx(): Promise<void> {
     if (!details) {
+      return;
+    }
+    if (!ensureNoPartyConditionalBlockers()) {
       return;
     }
 
@@ -319,6 +391,334 @@
     draft = nextDraft;
   }
 
+  function listByRole(role: PartyRole): PartyDraft[] {
+    return role === "vendedores" ? draft.vendedores : draft.compradores;
+  }
+
+  function patchParty(role: PartyRole, index: number, patch: Partial<PartyDraft>): void {
+    const list = listByRole(role);
+    const next = list.map((item, i) => (i === index ? { ...item, ...patch } : item));
+    draft = { ...draft, [role]: next } as ContractEditorDraft;
+  }
+
+  function updateParty(role: PartyRole, index: number, key: keyof PartyDraft, value: string): void {
+    patchParty(role, index, { [key]: value } as Partial<PartyDraft>);
+  }
+
+  function partyTypeOption(value: string): (typeof PARTY_TYPE_OPTIONS)[number] {
+    return normalizePartyType(value);
+  }
+
+  function isPartyPF(party: PartyDraft): boolean {
+    return partyTypeOption(party.tipo) === "Pessoa Fisica";
+  }
+
+  function shouldShowConjuge(party: PartyDraft): boolean {
+    return isPartyPF(party) && isPartyEstadoCivilComConjuge(party.estadoCivil);
+  }
+
+  function normalizeForComparison(value: string): string {
+    return value
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+  }
+
+  function partyConjugeNomeLabel(party: PartyDraft): string {
+    const estadoCivil = normalizeForComparison(party.estadoCivil);
+    return estadoCivil === "uniao estavel" ? "Nome do companheiro(a)" : "Nome do conjuge";
+  }
+
+  function isPartyConjugeObrigatorioIncompleto(party: PartyDraft): boolean {
+    return shouldShowConjuge(party) && party.conjNome.trim() === "";
+  }
+
+  function roleToLabel(role: PartyRole): string {
+    return role === "vendedores" ? "vendedor/cedente" : "comprador/cessionario";
+  }
+
+  // Replica o bloqueio do app Python quando faltam dados obrigatorios do conjuge.
+  function collectPartyConditionalErrors(currentDraft: ContractEditorDraft): string[] {
+    const out: string[] = [];
+    for (const role of ["vendedores", "compradores"] as const) {
+      const list = role === "vendedores" ? currentDraft.vendedores : currentDraft.compradores;
+      for (let index = 0; index < list.length; index += 1) {
+        if (isPartyConjugeObrigatorioIncompleto(list[index])) {
+          out.push(
+            `${roleToLabel(role)} ${index + 1}: para CASADO(A) ou UNIAO ESTAVEL, informe o nome do conjuge/companheiro(a).`
+          );
+        }
+      }
+    }
+    return out;
+  }
+
+  function ensureNoPartyConditionalBlockers(): boolean {
+    if (!hasPartyConditionalBlockers) {
+      return true;
+    }
+    error = partyConditionalErrors[0] ?? "Existem campos obrigatorios pendentes nas partes.";
+    success = "";
+    return false;
+  }
+
+  function partyLookupKey(role: PartyRole, index: number): string {
+    const party = listByRole(role)[index];
+    const ref = party?.ref?.trim() ?? "";
+    return ref !== "" ? `${role}_${ref}` : `${role}_${index}`;
+  }
+
+  function getPartyCnpjLookupState(role: PartyRole, index: number): {
+    status: "idle" | "loading" | "error" | "success";
+    message: string;
+  } {
+    return partyCnpjLookup.get(partyLookupKey(role, index)) ?? { status: "idle", message: "" };
+  }
+
+  function setPartyCnpjLookupState(
+    role: PartyRole,
+    index: number,
+    status: "idle" | "loading" | "error" | "success",
+    message: string
+  ): void {
+    const nextLookup = new Map(partyCnpjLookup);
+    nextLookup.set(partyLookupKey(role, index), { status, message });
+    partyCnpjLookup = nextLookup;
+  }
+
+  async function fillPartyFromCnpj(role: PartyRole, index: number, cnpjValue: string): Promise<void> {
+    const digits = onlyCnpjDigits(cnpjValue);
+    if (!isCompleteCnpj(digits)) {
+      return;
+    }
+
+    const lookupKey = partyLookupKey(role, index);
+    const requestId = (partyCnpjLookupRequestIds.get(lookupKey) ?? 0) + 1;
+    partyCnpjLookupRequestIds.set(lookupKey, requestId);
+    setPartyCnpjLookupState(role, index, "loading", "Consultando CNPJ...");
+
+    try {
+      const company = await lookupCompanyByCnpj(digits);
+      if (partyCnpjLookupRequestIds.get(lookupKey) !== requestId) {
+        return;
+      }
+      if (!company) {
+        setPartyCnpjLookupState(role, index, "error", "CNPJ nao encontrado.");
+        return;
+      }
+
+      const currentParty = listByRole(role)[index];
+      if (!currentParty) {
+        return;
+      }
+
+      const basePatch: Partial<PartyDraft> = {
+        cnpj: company.cnpj !== "" ? company.cnpj : formatCnpj(digits),
+        razaoSocial:
+          company.razaoSocial !== "" ? company.razaoSocial : currentParty.razaoSocial,
+        endCep: company.endereco.cep !== "" ? formatCep(company.endereco.cep) : currentParty.endCep,
+        endLogradouro:
+          company.endereco.logradouro !== "" ? company.endereco.logradouro : currentParty.endLogradouro,
+        endNumero: company.endereco.numero !== "" ? company.endereco.numero : currentParty.endNumero,
+        endComplemento:
+          company.endereco.complemento !== ""
+            ? company.endereco.complemento
+            : currentParty.endComplemento,
+        endBairro: company.endereco.bairro !== "" ? company.endereco.bairro : currentParty.endBairro,
+        endCidade: company.endereco.cidade !== "" ? company.endereco.cidade : currentParty.endCidade,
+        endUf: company.endereco.uf !== "" ? company.endereco.uf : currentParty.endUf
+      };
+      patchParty(role, index, basePatch);
+
+      const nextPartyAfterPatch = {
+        ...currentParty,
+        ...basePatch
+      };
+      const cepFromCnpj = onlyCepDigits(nextPartyAfterPatch.endCep);
+      if (isCompleteCep(cepFromCnpj)) {
+        const viaCepAddress = await lookupAddressByCep(cepFromCnpj);
+        if (partyCnpjLookupRequestIds.get(lookupKey) !== requestId || !viaCepAddress) {
+          return;
+        }
+
+        // Complementa somente os campos que vieram vazios da consulta de CNPJ.
+        const cepPatch: Partial<PartyDraft> = {
+          endCep: viaCepAddress.cep !== "" ? viaCepAddress.cep : nextPartyAfterPatch.endCep,
+          endLogradouro:
+            nextPartyAfterPatch.endLogradouro !== ""
+              ? nextPartyAfterPatch.endLogradouro
+              : viaCepAddress.logradouro,
+          endComplemento:
+            nextPartyAfterPatch.endComplemento !== ""
+              ? nextPartyAfterPatch.endComplemento
+              : viaCepAddress.complemento,
+          endBairro:
+            nextPartyAfterPatch.endBairro !== "" ? nextPartyAfterPatch.endBairro : viaCepAddress.bairro,
+          endCidade:
+            nextPartyAfterPatch.endCidade !== "" ? nextPartyAfterPatch.endCidade : viaCepAddress.cidade,
+          endUf: nextPartyAfterPatch.endUf !== "" ? nextPartyAfterPatch.endUf : viaCepAddress.uf
+        };
+        patchParty(role, index, cepPatch);
+      }
+
+      partyLastFetchedCnpj.set(lookupKey, digits);
+      setPartyCnpjLookupState(role, index, "success", "Dados da empresa preenchidos pelo CNPJ.");
+    } catch (lookupError) {
+      if (partyCnpjLookupRequestIds.get(lookupKey) !== requestId) {
+        return;
+      }
+      const message =
+        lookupError instanceof Error
+          ? lookupError.message
+          : "Nao foi possivel consultar o CNPJ agora.";
+      setPartyCnpjLookupState(role, index, "error", message);
+    }
+  }
+
+  function onPartyCnpjInput(role: PartyRole, index: number, value: string): void {
+    const formatted = formatCnpj(value);
+    updateParty(role, index, "cnpj", formatted);
+
+    const digits = onlyCnpjDigits(formatted);
+    if (!isCompleteCnpj(digits)) {
+      setPartyCnpjLookupState(role, index, "idle", "");
+      return;
+    }
+
+    const lookupKey = partyLookupKey(role, index);
+    if (partyLastFetchedCnpj.get(lookupKey) === digits) {
+      return;
+    }
+    void fillPartyFromCnpj(role, index, formatted);
+  }
+
+  function partyAddressSectionTitle(party: PartyDraft): string {
+    return isPartyPF(party) ? "Endereco" : "Endereco da empresa";
+  }
+
+  function partyAddressPreview(party: PartyDraft): string {
+    const generated = buildAddressText({
+      cep: party.endCep,
+      logradouro: party.endLogradouro,
+      numero: party.endNumero,
+      complemento: party.endComplemento,
+      bairro: party.endBairro,
+      cidade: party.endCidade,
+      uf: party.endUf
+    });
+    return generated !== "" ? generated : party.endTexto;
+  }
+
+  function isKnownPartyOption(value: string, options: readonly string[]): boolean {
+    return options.includes(value.trim().toLowerCase());
+  }
+
+  function selectedNacionalidadeOption(value: string): string {
+    const normalized = value.trim().toLowerCase();
+    if (isKnownPartyOption(normalized, PARTY_NACIONALIDADE_OPTIONS)) {
+      return normalized;
+    }
+    return PARTY_OTHER_OPTION;
+  }
+
+  function selectedRegimeBensOption(value: string): string {
+    const normalized = value.trim().toLowerCase();
+    if (isKnownPartyOption(normalized, PARTY_REGIME_BENS_OPTIONS)) {
+      return normalized;
+    }
+    return PARTY_REGIME_OTHER_OPTION;
+  }
+
+  function onPartyTipoChange(role: PartyRole, index: number, value: string): void {
+    const tipo = partyTypeOption(value);
+    const lookupKey = partyLookupKey(role, index);
+    partyLastFetchedCnpj.delete(lookupKey);
+    partyCnpjLookupRequestIds.delete(lookupKey);
+    // Limpa feedback antigo ao trocar PF/PJ para evitar mensagens fora de contexto.
+    setPartyCnpjLookupState(role, index, "idle", "");
+    patchParty(role, index, { tipo });
+  }
+
+  // Quando seleciona uma opcao padrao, a nacionalidade principal recebe o valor.
+  function onPartyNacionalidadeOptionChange(role: PartyRole, index: number, value: string): void {
+    if (value === PARTY_OTHER_OPTION) {
+      patchParty(role, index, {
+        nacionalidade: "",
+        nacionalidadeOutra: ""
+      });
+      return;
+    }
+    patchParty(role, index, {
+      nacionalidade: value,
+      nacionalidadeOutra: ""
+    });
+  }
+
+  function onPartyNacionalidadeOutraInput(role: PartyRole, index: number, value: string): void {
+    patchParty(role, index, {
+      nacionalidade: value,
+      nacionalidadeOutra: value
+    });
+  }
+
+  function onPartyConjNacionalidadeOptionChange(role: PartyRole, index: number, value: string): void {
+    if (value === PARTY_OTHER_OPTION) {
+      patchParty(role, index, {
+        conjNacionalidade: "",
+        conjNacionalidadeOutra: ""
+      });
+      return;
+    }
+    patchParty(role, index, {
+      conjNacionalidade: value,
+      conjNacionalidadeOutra: ""
+    });
+  }
+
+  function onPartyConjNacionalidadeOutraInput(role: PartyRole, index: number, value: string): void {
+    patchParty(role, index, {
+      conjNacionalidade: value,
+      conjNacionalidadeOutra: value
+    });
+  }
+
+  function onPartyEstadoCivilChange(role: PartyRole, index: number, value: string): void {
+    const nextState: Partial<PartyDraft> = {
+      estadoCivil: value
+    };
+    if (!isPartyEstadoCivilComConjuge(value)) {
+      // Segue a regra do python para limpar bloco de conjuge/regime quando nao se aplica.
+      nextState.regimeBens = "";
+      nextState.regimeBensOutro = "";
+      nextState.conjNome = "";
+      nextState.conjNacionalidade = "";
+      nextState.conjNacionalidadeOutra = "";
+      nextState.conjProfissao = "";
+      nextState.conjRg = "";
+      nextState.conjCpf = "";
+    }
+    patchParty(role, index, nextState);
+  }
+
+  function onPartyRegimeBensChange(role: PartyRole, index: number, value: string): void {
+    if (value === PARTY_REGIME_OTHER_OPTION) {
+      patchParty(role, index, { regimeBens: "", regimeBensOutro: "" });
+      return;
+    }
+    patchParty(role, index, {
+      regimeBens: value,
+      regimeBensOutro: ""
+    });
+  }
+
+  function onPartyRegimeBensOutroInput(role: PartyRole, index: number, value: string): void {
+    patchParty(role, index, {
+      regimeBens: value,
+      regimeBensOutro: value
+    });
+  }
+
   function handleCepInput(event: Event): void {
     const formatted = formatCep(inputValue(event));
     updateField("imovelCep", formatted);
@@ -399,22 +799,15 @@
   }
 
   function addParty(role: PartyRole): void {
-    const list = role === "vendedores" ? draft.vendedores : draft.compradores;
-    const next = [...list, { ref: defaultPartyRef(role, list.length + 1), nome: "", razaoSocial: "" }];
-    draft = { ...draft, [role]: next } as ContractEditorDraft;
-  }
-
-  function updateParty(role: PartyRole, index: number, key: "nome" | "razaoSocial", value: string): void {
-    const list = role === "vendedores" ? draft.vendedores : draft.compradores;
-    const next = list.map((item, i) => (i === index ? { ...item, [key]: value } : item));
+    const list = listByRole(role);
+    const next = [...list, emptyPartyDraft(role, list.length + 1)];
     draft = { ...draft, [role]: next } as ContractEditorDraft;
   }
 
   function removeParty(role: PartyRole, index: number): void {
-    const list = role === "vendedores" ? draft.vendedores : draft.compradores;
+    const list = listByRole(role);
     const filtered = list.filter((_, i) => i !== index);
-    const next =
-      filtered.length > 0 ? filtered : [{ ref: defaultPartyRef(role, 1), nome: "", razaoSocial: "" }];
+    const next = filtered.length > 0 ? filtered : [emptyPartyDraft(role, 1)];
     draft = { ...draft, [role]: next } as ContractEditorDraft;
   }
 
@@ -721,7 +1114,11 @@
       </div>
 
       <div class="editor-toolbar">
-        <button class="btn ghost" disabled={previewing} on:click={() => refreshPreview(true)}>
+        <button
+          class="btn ghost"
+          disabled={previewing || hasPartyConditionalBlockers}
+          on:click={() => refreshPreview(true)}
+        >
           {previewing ? "Gerando previa..." : "Atualizar previa"}
         </button>
         <button class="btn ghost" on:click={restoreLatestVersion}>Restaurar ultima versao</button>
@@ -736,96 +1133,369 @@
           </div>
 
           <div class="party-columns">
-            <div class="party-column">
-              <div class="party-column-head">
-                <h4>Parte vendedora / cedente</h4>
-                <button class="btn ghost btn-sm" on:click={() => addParty("vendedores")}>
-                  Adicionar
-                </button>
-              </div>
-
-              {#each draft.vendedores as party, index}
-                <div class="party-card">
-                  <div class="grid cols-2">
-                    <div class="field">
-                      <label for={`seller_nome_${index}`}>Nome</label>
-                      <input
-                        id={`seller_nome_${index}`}
-                        value={party.nome}
-                        placeholder="Nome completo"
-                        on:input={(event) => updateParty("vendedores", index, "nome", inputValue(event))}
-                      />
-                    </div>
-                    <div class="field">
-                      <label for={`seller_razao_${index}`}>Razao social</label>
-                      <input
-                        id={`seller_razao_${index}`}
-                        value={party.razaoSocial}
-                        placeholder="Opcional para pessoa juridica"
-                        on:input={(event) =>
-                          updateParty("vendedores", index, "razaoSocial", inputValue(event))}
-                      />
-                    </div>
-                  </div>
-
-                  <div class="inline-actions">
-                    <button
-                      class="btn ghost btn-sm"
-                      disabled={draft.vendedores.length === 1}
-                      on:click={() => removeParty("vendedores", index)}
-                    >
-                      Remover
-                    </button>
-                  </div>
+            {#each PARTY_SECTIONS as section}
+              <div class="party-column">
+                <div class="party-column-head">
+                  <h4>{section.title}</h4>
+                  <button class="btn ghost btn-sm" on:click={() => addParty(section.role)}>
+                    Adicionar
+                  </button>
                 </div>
-              {/each}
-            </div>
 
-            <div class="party-column">
-              <div class="party-column-head">
-                <h4>Parte compradora / cessionaria</h4>
-                <button class="btn ghost btn-sm" on:click={() => addParty("compradores")}>
-                  Adicionar
-                </button>
+                {#each listByRole(section.role) as party, index}
+                  <div class="party-card">
+                    <div class="field">
+                      <label for={`${section.idPrefix}_tipo_${index}`}>Tipo da parte</label>
+                      <select
+                        id={`${section.idPrefix}_tipo_${index}`}
+                        value={partyTypeOption(party.tipo)}
+                        on:change={(event) =>
+                          onPartyTipoChange(section.role, index, selectValue(event))}
+                      >
+                        {#each PARTY_TYPE_OPTIONS as option}
+                          <option value={option}>{option}</option>
+                        {/each}
+                      </select>
+                    </div>
+
+                    {#if isPartyPF(party)}
+                      <div class="grid cols-2">
+                        <div class="field">
+                          <label for={`${section.idPrefix}_nome_${index}`}>Nome completo</label>
+                          <input
+                            id={`${section.idPrefix}_nome_${index}`}
+                            value={party.nome}
+                            on:input={(event) => updateParty(section.role, index, "nome", inputValue(event))}
+                          />
+                        </div>
+
+                        <div class="field">
+                          <label for={`${section.idPrefix}_nat_${index}`}>Nacionalidade</label>
+                          <select
+                            id={`${section.idPrefix}_nat_${index}`}
+                            value={selectedNacionalidadeOption(party.nacionalidade)}
+                            on:change={(event) =>
+                              onPartyNacionalidadeOptionChange(section.role, index, selectValue(event))}
+                          >
+                            {#each PARTY_NACIONALIDADE_OPTIONS as option}
+                              <option value={option}>{option}</option>
+                            {/each}
+                          </select>
+                        </div>
+
+                        {#if selectedNacionalidadeOption(party.nacionalidade) === PARTY_OTHER_OPTION}
+                          <div class="field span-all">
+                            <label for={`${section.idPrefix}_nat_outro_${index}`}>Escreva a nacionalidade</label>
+                            <input
+                              id={`${section.idPrefix}_nat_outro_${index}`}
+                              value={party.nacionalidadeOutra || party.nacionalidade}
+                              on:input={(event) =>
+                                onPartyNacionalidadeOutraInput(section.role, index, inputValue(event))}
+                            />
+                          </div>
+                        {/if}
+
+                        <div class="field">
+                          <label for={`${section.idPrefix}_rg_${index}`}>RG n.o</label>
+                          <input
+                            id={`${section.idPrefix}_rg_${index}`}
+                            value={party.rg}
+                            on:input={(event) => updateParty(section.role, index, "rg", inputValue(event))}
+                          />
+                        </div>
+
+                        <div class="field">
+                          <label for={`${section.idPrefix}_cpf_${index}`}>CPF n.o</label>
+                          <input
+                            id={`${section.idPrefix}_cpf_${index}`}
+                            value={party.cpf}
+                            on:input={(event) => updateParty(section.role, index, "cpf", inputValue(event))}
+                          />
+                        </div>
+
+                        <div class="field">
+                          <label for={`${section.idPrefix}_prof_${index}`}>Profissao</label>
+                          <input
+                            id={`${section.idPrefix}_prof_${index}`}
+                            value={party.profissao}
+                            on:input={(event) => updateParty(section.role, index, "profissao", inputValue(event))}
+                          />
+                        </div>
+
+                        <div class="field">
+                          <label for={`${section.idPrefix}_civil_${index}`}>Estado civil</label>
+                          <select
+                            id={`${section.idPrefix}_civil_${index}`}
+                            value={party.estadoCivil}
+                            on:change={(event) =>
+                              onPartyEstadoCivilChange(section.role, index, selectValue(event))}
+                          >
+                            {#each PARTY_ESTADO_CIVIL_OPTIONS as option}
+                              <option value={option}>{option}</option>
+                            {/each}
+                          </select>
+                        </div>
+                      </div>
+
+                      {#if shouldShowConjuge(party)}
+                        <div class="editor-subsection">
+                          <h5>Conjuge / companheiro(a)</h5>
+
+                          <div class="grid cols-2">
+                            <div class="field">
+                              <label for={`${section.idPrefix}_regime_${index}`}>Regime de bens</label>
+                              <select
+                                id={`${section.idPrefix}_regime_${index}`}
+                                value={selectedRegimeBensOption(party.regimeBens)}
+                                on:change={(event) =>
+                                  onPartyRegimeBensChange(section.role, index, selectValue(event))}
+                              >
+                                {#each PARTY_REGIME_BENS_OPTIONS as option}
+                                  <option value={option}>{option}</option>
+                                {/each}
+                              </select>
+                            </div>
+
+                            {#if selectedRegimeBensOption(party.regimeBens) === PARTY_REGIME_OTHER_OPTION}
+                              <div class="field">
+                                <label for={`${section.idPrefix}_regime_outro_${index}`}>
+                                  Escreva o regime de bens
+                                </label>
+                                <input
+                                  id={`${section.idPrefix}_regime_outro_${index}`}
+                                  value={party.regimeBensOutro || party.regimeBens}
+                                  on:input={(event) =>
+                                    onPartyRegimeBensOutroInput(section.role, index, inputValue(event))}
+                                />
+                              </div>
+                            {/if}
+
+                            <div class="field">
+                              <label for={`${section.idPrefix}_conj_nome_${index}`}>
+                                {partyConjugeNomeLabel(party)}
+                              </label>
+                              <input
+                                id={`${section.idPrefix}_conj_nome_${index}`}
+                                value={party.conjNome}
+                                on:input={(event) => updateParty(section.role, index, "conjNome", inputValue(event))}
+                              />
+                              {#if isPartyConjugeObrigatorioIncompleto(party)}
+                                <small class="field-feedback error">
+                                  Para CASADO(A) ou UNIAO ESTAVEL, o nome do conjuge/companheiro(a) e obrigatorio.
+                                </small>
+                              {/if}
+                            </div>
+
+                            <div class="field">
+                              <label for={`${section.idPrefix}_conj_nat_${index}`}>Nacionalidade do conjuge</label>
+                              <select
+                                id={`${section.idPrefix}_conj_nat_${index}`}
+                                value={selectedNacionalidadeOption(party.conjNacionalidade)}
+                                on:change={(event) =>
+                                  onPartyConjNacionalidadeOptionChange(section.role, index, selectValue(event))}
+                              >
+                                {#each PARTY_NACIONALIDADE_OPTIONS as option}
+                                  <option value={option}>{option}</option>
+                                {/each}
+                              </select>
+                            </div>
+
+                            {#if selectedNacionalidadeOption(party.conjNacionalidade) === PARTY_OTHER_OPTION}
+                              <div class="field span-all">
+                                <label for={`${section.idPrefix}_conj_nat_outro_${index}`}>
+                                  Escreva a nacionalidade do conjuge
+                                </label>
+                                <input
+                                  id={`${section.idPrefix}_conj_nat_outro_${index}`}
+                                  value={party.conjNacionalidadeOutra || party.conjNacionalidade}
+                                  on:input={(event) =>
+                                    onPartyConjNacionalidadeOutraInput(section.role, index, inputValue(event))}
+                                />
+                              </div>
+                            {/if}
+
+                            <div class="field">
+                              <label for={`${section.idPrefix}_conj_prof_${index}`}>Profissao do conjuge</label>
+                              <input
+                                id={`${section.idPrefix}_conj_prof_${index}`}
+                                value={party.conjProfissao}
+                                on:input={(event) =>
+                                  updateParty(section.role, index, "conjProfissao", inputValue(event))}
+                              />
+                            </div>
+
+                            <div class="field">
+                              <label for={`${section.idPrefix}_conj_rg_${index}`}>RG do conjuge</label>
+                              <input
+                                id={`${section.idPrefix}_conj_rg_${index}`}
+                                value={party.conjRg}
+                                on:input={(event) => updateParty(section.role, index, "conjRg", inputValue(event))}
+                              />
+                            </div>
+
+                            <div class="field">
+                              <label for={`${section.idPrefix}_conj_cpf_${index}`}>CPF do conjuge</label>
+                              <input
+                                id={`${section.idPrefix}_conj_cpf_${index}`}
+                                value={party.conjCpf}
+                                on:input={(event) => updateParty(section.role, index, "conjCpf", inputValue(event))}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      {/if}
+                    {:else}
+                      <div class="grid cols-2">
+                        <div class="field">
+                          <label for={`${section.idPrefix}_cnpj_${index}`}>CNPJ</label>
+                          <input
+                            id={`${section.idPrefix}_cnpj_${index}`}
+                            value={party.cnpj}
+                            placeholder="00.000.000/0000-00"
+                            on:input={(event) => onPartyCnpjInput(section.role, index, inputValue(event))}
+                          />
+                          {#if getPartyCnpjLookupState(section.role, index).status === "loading"}
+                            <small class="field-feedback info">
+                              {getPartyCnpjLookupState(section.role, index).message}
+                            </small>
+                          {:else if getPartyCnpjLookupState(section.role, index).status === "error"}
+                            <small class="field-feedback error">
+                              {getPartyCnpjLookupState(section.role, index).message}
+                            </small>
+                          {:else if getPartyCnpjLookupState(section.role, index).status === "success"}
+                            <small class="field-feedback info">
+                              {getPartyCnpjLookupState(section.role, index).message}
+                            </small>
+                          {/if}
+                        </div>
+
+                        <div class="field">
+                          <label for={`${section.idPrefix}_razao_${index}`}>Razao social</label>
+                          <input
+                            id={`${section.idPrefix}_razao_${index}`}
+                            value={party.razaoSocial}
+                            placeholder="Preenchida automaticamente pelo CNPJ"
+                            disabled
+                          />
+                        </div>
+
+                        <div class="field span-all">
+                          <h5>Representante legal (quem assina)</h5>
+                        </div>
+
+                        <div class="field">
+                          <label for={`${section.idPrefix}_rep_nome_${index}`}>Nome do representante</label>
+                          <input
+                            id={`${section.idPrefix}_rep_nome_${index}`}
+                            value={party.repNome}
+                            on:input={(event) => updateParty(section.role, index, "repNome", inputValue(event))}
+                          />
+                        </div>
+
+                        <div class="field">
+                          <label for={`${section.idPrefix}_rep_cpf_${index}`}>CPF do representante</label>
+                          <input
+                            id={`${section.idPrefix}_rep_cpf_${index}`}
+                            value={party.repCpf}
+                            on:input={(event) => updateParty(section.role, index, "repCpf", inputValue(event))}
+                          />
+                        </div>
+                      </div>
+                    {/if}
+
+                    <div class="editor-subsection">
+                      <h5>{partyAddressSectionTitle(party)}</h5>
+                      <div class="grid cols-2">
+                        <div class="field">
+                          <label for={`${section.idPrefix}_end_cep_${index}`}>CEP</label>
+                          <input
+                            id={`${section.idPrefix}_end_cep_${index}`}
+                            value={party.endCep}
+                            on:input={(event) => updateParty(section.role, index, "endCep", inputValue(event))}
+                          />
+                        </div>
+                        <div class="field">
+                          <label for={`${section.idPrefix}_end_logradouro_${index}`}>Logradouro</label>
+                          <input
+                            id={`${section.idPrefix}_end_logradouro_${index}`}
+                            value={party.endLogradouro}
+                            on:input={(event) =>
+                              updateParty(section.role, index, "endLogradouro", inputValue(event))}
+                          />
+                        </div>
+                        <div class="field">
+                          <label for={`${section.idPrefix}_end_numero_${index}`}>Numero</label>
+                          <input
+                            id={`${section.idPrefix}_end_numero_${index}`}
+                            value={party.endNumero}
+                            on:input={(event) => updateParty(section.role, index, "endNumero", inputValue(event))}
+                          />
+                        </div>
+                        <div class="field">
+                          <label for={`${section.idPrefix}_end_complemento_${index}`}>Complemento</label>
+                          <input
+                            id={`${section.idPrefix}_end_complemento_${index}`}
+                            value={party.endComplemento}
+                            on:input={(event) =>
+                              updateParty(section.role, index, "endComplemento", inputValue(event))}
+                          />
+                        </div>
+                        <div class="field">
+                          <label for={`${section.idPrefix}_end_bairro_${index}`}>Bairro</label>
+                          <input
+                            id={`${section.idPrefix}_end_bairro_${index}`}
+                            value={party.endBairro}
+                            on:input={(event) => updateParty(section.role, index, "endBairro", inputValue(event))}
+                          />
+                        </div>
+                        <div class="field">
+                          <label for={`${section.idPrefix}_end_cidade_${index}`}>Cidade</label>
+                          <input
+                            id={`${section.idPrefix}_end_cidade_${index}`}
+                            value={party.endCidade}
+                            on:input={(event) => updateParty(section.role, index, "endCidade", inputValue(event))}
+                          />
+                        </div>
+                        <div class="field">
+                          <label for={`${section.idPrefix}_end_uf_${index}`}>UF</label>
+                          <input
+                            id={`${section.idPrefix}_end_uf_${index}`}
+                            value={party.endUf}
+                            on:input={(event) => updateParty(section.role, index, "endUf", inputValue(event))}
+                          />
+                        </div>
+                        <div class="field span-all">
+                          <label for={`${section.idPrefix}_end_texto_${index}`}>Endereco completo (gerado)</label>
+                          <textarea
+                            id={`${section.idPrefix}_end_texto_${index}`}
+                            value={partyAddressPreview(party)}
+                            rows="3"
+                            disabled
+                          ></textarea>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="inline-actions">
+                      <button
+                        class="btn ghost btn-sm"
+                        disabled={listByRole(section.role).length === 1}
+                        on:click={() => removeParty(section.role, index)}
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  </div>
+                {/each}
               </div>
-
-              {#each draft.compradores as party, index}
-                <div class="party-card">
-                  <div class="grid cols-2">
-                    <div class="field">
-                      <label for={`buyer_nome_${index}`}>Nome</label>
-                      <input
-                        id={`buyer_nome_${index}`}
-                        value={party.nome}
-                        placeholder="Nome completo"
-                        on:input={(event) => updateParty("compradores", index, "nome", inputValue(event))}
-                      />
-                    </div>
-                    <div class="field">
-                      <label for={`buyer_razao_${index}`}>Razao social</label>
-                      <input
-                        id={`buyer_razao_${index}`}
-                        value={party.razaoSocial}
-                        placeholder="Opcional para pessoa juridica"
-                        on:input={(event) =>
-                          updateParty("compradores", index, "razaoSocial", inputValue(event))}
-                      />
-                    </div>
-                  </div>
-
-                  <div class="inline-actions">
-                    <button
-                      class="btn ghost btn-sm"
-                      disabled={draft.compradores.length === 1}
-                      on:click={() => removeParty("compradores", index)}
-                    >
-                      Remover
-                    </button>
-                  </div>
-                </div>
-              {/each}
-            </div>
+            {/each}
           </div>
+
+          {#if hasPartyConditionalBlockers}
+            <div class="notice error">
+              {partyConditionalErrors[0]}
+            </div>
+          {/if}
         </section>
 
         <section class="editor-section">
@@ -1321,15 +1991,19 @@
       </div>
 
       <div class="actions">
-        <button class="btn primary" disabled={saving} on:click={saveNewVersion}>
+        <button class="btn primary" disabled={saving || hasPartyConditionalBlockers} on:click={saveNewVersion}>
           {saving ? "Salvando..." : "Salvar nova versao"}
         </button>
-        <button class="btn ghost" disabled={previewing} on:click={() => refreshPreview(true)}>
+        <button
+          class="btn ghost"
+          disabled={previewing || hasPartyConditionalBlockers}
+          on:click={() => refreshPreview(true)}
+        >
           {previewing ? "Gerando previa..." : "Gerar previa agora"}
         </button>
         <button
           class="btn ghost"
-          disabled={downloadingDocx || previewing}
+          disabled={downloadingDocx || previewing || hasPartyConditionalBlockers}
           on:click={downloadContractDocx}
         >
           {downloadingDocx ? "Gerando DOCX..." : "Baixar DOCX"}
@@ -1488,6 +2162,8 @@
     border-radius: 12px;
     background: #f9fbff;
     padding: 10px;
+    display: grid;
+    gap: 10px;
   }
 
   .property-layout {
@@ -1633,6 +2309,11 @@
     padding-top: 12px;
     display: grid;
     gap: 10px;
+  }
+
+  .editor-subsection h5 {
+    margin: 0;
+    font-size: 0.96rem;
   }
 
   .delivery-clause-list {
