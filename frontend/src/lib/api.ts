@@ -1,5 +1,6 @@
 import { clearAuth, getAuthState, setAuth } from "./stores/auth";
 import { resolveApiBase } from "./utils/api-base";
+import { resolveAPIError } from "./utils/api-error";
 import type {
   AuthResponse,
   Broker,
@@ -54,12 +55,8 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       body: body !== undefined ? JSON.stringify(body) : undefined
     });
   } catch {
-    // Mantem o fluxo de erro padronizado da aplicacao mesmo sem resposta HTTP.
-    throw new APIError(
-      "Nao foi possivel conectar ao servidor. Verifique se a API esta ativa.",
-      0,
-      "network_error"
-    );
+    const resolved = resolveAPIError(undefined, 0, "");
+    throw new APIError(resolved.message, 0, resolved.code);
   }
 
   if (response.status === 401 && auth && retryOnAuth && authState.refreshToken) {
@@ -76,9 +73,8 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
   const payload = await safeJson(response);
   if (!response.ok) {
-    const code = payload?.error?.code ?? "request_error";
-    const message = payload?.error?.message ?? "Erro na requisicao";
-    throw new APIError(message, response.status, code);
+    const resolved = resolveAPIError(payload, response.status, response.statusText);
+    throw new APIError(resolved.message, response.status, resolved.code);
   }
 
   return payload as T;
