@@ -12,20 +12,20 @@ import (
 )
 
 type Service struct {
-	repo               Repository
-	tokens             *tokenManager
-	accessTokenTTL     time.Duration
-	refreshTokenTTL    time.Duration
-	passwordResetTTL   time.Duration
-	appEnv             string
+	repo             Repository
+	tokens           *tokenManager
+	accessTokenTTL   time.Duration
+	refreshTokenTTL  time.Duration
+	passwordResetTTL time.Duration
+	appEnv           string
 }
 
 type ServiceConfig struct {
-	AccessTokenTTL      time.Duration
-	RefreshTokenTTL     time.Duration
-	PasswordResetTTL    time.Duration
-	JWTSecret           string
-	AppEnv              string
+	AccessTokenTTL   time.Duration
+	RefreshTokenTTL  time.Duration
+	PasswordResetTTL time.Duration
+	JWTSecret        string
+	AppEnv           string
 }
 
 func NewService(repo Repository, cfg ServiceConfig) *Service {
@@ -133,7 +133,8 @@ func (s *Service) RegisterUser(ctx context.Context, actor AuthClaims, in Registe
 
 func (s *Service) Login(ctx context.Context, in LoginInput, metadata ClientMetadata) (*AuthResult, error) {
 	email := strings.TrimSpace(strings.ToLower(in.Email))
-	password := strings.TrimSpace(in.Password)
+	// Keep password exactly as typed to stay consistent with register/reset hashing behavior.
+	password := in.Password
 	if !isValidEmail(email) || password == "" {
 		return nil, common.NewUnauthorized("invalid_credentials", "email ou senha invalidos")
 	}

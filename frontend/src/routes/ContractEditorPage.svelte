@@ -14,6 +14,7 @@
     lookupCompanyByCnpj,
     onlyCnpjDigits
   } from "../lib/utils/cnpj";
+  import { readInputValue, readSelectValue, readTextareaValue } from "../lib/utils/dom-events";
   import type { ClauseTemplate, ContractDetails, ContractPreview, ContractVersion } from "../lib/types";
   import {
     buildPropertyAddressText,
@@ -976,15 +977,15 @@
   }
 
   function inputValue(event: Event): string {
-    return (event.currentTarget as HTMLInputElement).value;
+    return readInputValue(event);
   }
 
   function selectValue(event: Event): string {
-    return (event.currentTarget as HTMLSelectElement).value;
+    return readSelectValue(event);
   }
 
   function textareaValue(event: Event): string {
-    return (event.currentTarget as HTMLTextAreaElement).value;
+    return readTextareaValue(event);
   }
 
   function isKnownPropertyType(value: string): boolean {

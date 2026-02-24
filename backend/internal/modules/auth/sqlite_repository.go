@@ -47,7 +47,8 @@ func (r *SQLiteRepository) GetUserByEmail(ctx context.Context, email string) (*U
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id, tenant_id, name, email, password_hash, role, is_active, created_at, updated_at
 		FROM users
-		WHERE email = LOWER(?)
+		-- Case-insensitive lookup keeps login/forgot-password compatible with legacy records.
+		WHERE LOWER(email) = LOWER(?)
 	`, email)
 
 	var user User

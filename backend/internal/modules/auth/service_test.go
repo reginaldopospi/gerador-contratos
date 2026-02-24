@@ -9,9 +9,9 @@ import (
 )
 
 type fakeRepo struct {
-	tenants map[string]Tenant
-	users   map[string]User
-	emailIx map[string]string
+	tenants  map[string]Tenant
+	users    map[string]User
+	emailIx  map[string]string
 	sessions map[string]Session
 	resets   map[string]PasswordResetToken
 }
@@ -195,5 +195,36 @@ func TestForgotAndResetPasswordFlow(t *testing.T) {
 	_, err = svc.Login(context.Background(), LoginInput{Email: "admin@teste.com", Password: "novaSenhaForte123"}, ClientMetadata{})
 	if err != nil {
 		t.Fatalf("login with new password failed: %v", err)
+	}
+}
+
+func TestLoginWithPasswordContainingSpaces(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, ServiceConfig{
+		AccessTokenTTL:   15 * time.Minute,
+		RefreshTokenTTL:  7 * 24 * time.Hour,
+		PasswordResetTTL: 30 * time.Minute,
+		JWTSecret:        "test-secret",
+		AppEnv:           "dev",
+	})
+
+	// This password intentionally keeps leading/trailing spaces.
+	passwordWithSpaces := "  senhaComEspacos123  "
+	_, err := svc.RegisterTenantAdmin(context.Background(), RegisterTenantAdminInput{
+		TenantName: "Imobiliaria Teste",
+		Name:       "Admin",
+		Email:      "admin-space@teste.com",
+		Password:   passwordWithSpaces,
+	}, ClientMetadata{})
+	if err != nil {
+		t.Fatalf("register failed: %v", err)
+	}
+
+	_, err = svc.Login(context.Background(), LoginInput{
+		Email:    "admin-space@teste.com",
+		Password: passwordWithSpaces,
+	}, ClientMetadata{})
+	if err != nil {
+		t.Fatalf("login failed for password with spaces: %v", err)
 	}
 }

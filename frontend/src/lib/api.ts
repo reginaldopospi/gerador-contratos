@@ -1,4 +1,5 @@
 import { clearAuth, getAuthState, setAuth } from "./stores/auth";
+import { resolveApiBase } from "./utils/api-base";
 import type {
   AuthResponse,
   Broker,
@@ -8,7 +9,7 @@ import type {
   ContractPreview
 } from "./types";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080/api/v1";
+const API_BASE = resolveApiBase(import.meta.env.VITE_API_BASE_URL);
 
 class APIError extends Error {
   status: number;
@@ -45,11 +46,21 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     headers.Authorization = `Bearer ${authState.accessToken}`;
   }
 
-  const response = await fetch(`${API_BASE}${path}`, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined
+    });
+  } catch {
+    // Mantem o fluxo de erro padronizado da aplicacao mesmo sem resposta HTTP.
+    throw new APIError(
+      "Nao foi possivel conectar ao servidor. Verifique se a API esta ativa.",
+      0,
+      "network_error"
+    );
+  }
 
   if (response.status === 401 && auth && retryOnAuth && authState.refreshToken) {
     const refreshed = await refreshSession(authState.refreshToken);

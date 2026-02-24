@@ -12,8 +12,12 @@ Frontend SPA em Svelte integrado com a API Go.
 Crie `frontend/.env` (opcional):
 
 ```bash
-VITE_API_BASE_URL=http://localhost:8080/api/v1
+VITE_API_BASE_URL=/api/v1
 ```
+
+Observacao:
+- Em desenvolvimento, o Vite faz proxy de `/api` para `http://localhost:8080`.
+- Para backend remoto, use URL absoluta em `VITE_API_BASE_URL` (ex.: `https://api.seudominio.com/api/v1`).
 
 ## Como rodar
 

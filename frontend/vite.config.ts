@@ -5,7 +5,14 @@ export default defineConfig({
   plugins: [svelte()],
   server: {
     port: 5173,
-    strictPort: true
+    strictPort: true,
+    proxy: {
+      // Encaminha chamadas da SPA para a API local durante desenvolvimento.
+      "/api": {
+        target: "http://localhost:8080",
+        changeOrigin: true
+      }
+    }
   },
   test: {
     environment: "jsdom",
