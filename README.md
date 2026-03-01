@@ -31,6 +31,18 @@ cd backend
 go run ./cmd/api
 ```
 
+### Atalho Windows (backend em segundo plano)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start-backend.ps1
+```
+
+Para parar:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\stop-backend.ps1
+```
+
 ### 2) Frontend
 
 ```bash
