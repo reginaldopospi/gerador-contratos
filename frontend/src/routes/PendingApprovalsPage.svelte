@@ -1,25 +1,35 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api, APIError } from "../lib/api";
-  import type { PendingRegistration } from "../lib/types";
+  import type { PendingRegistration, TenantSummary } from "../lib/types";
+  import {
+    filterPendingRegistrations,
+    filterTenantSummaries
+  } from "../lib/utils/admin-panel";
   import { requirePlatformAdmin } from "../lib/utils/guards";
 
   let loading = true;
   let savingUserID = "";
   let items: PendingRegistration[] = [];
+  let tenants: TenantSummary[] = [];
   let pendingPasswords: Record<string, string> = {};
   let query = "";
   let error = "";
   let success = "";
 
-  async function loadPending(): Promise<void> {
+  async function loadAdminData(): Promise<void> {
     loading = true;
     error = "";
     try {
-      // Carrega os cadastros pendentes exibidos no painel administrativo.
-      items = await api.listPendingRegistrations();
+      // Carrega os dados principais do painel com uma unica sincronizacao.
+      const [pendingItems, tenantItems] = await Promise.all([
+        api.listPendingRegistrations(),
+        api.listTenants()
+      ]);
+      items = pendingItems;
+      tenants = tenantItems;
     } catch (err) {
-      error = err instanceof APIError ? err.message : "Falha ao carregar cadastros pendentes";
+      error = err instanceof APIError ? err.message : "Falha ao carregar dados administrativos";
     } finally {
       loading = false;
     }
@@ -30,10 +40,19 @@
     error = "";
     success = "";
     try {
+      const approvedItem = items.find((item) => item.user_id === userID);
       const password = pendingPasswords[userID] ?? "";
       await api.approvePendingRegistration(userID, password);
       // Atualiza a grade para refletir a aprovacao sem precisar recarregar a pagina inteira.
       items = items.filter((item) => item.user_id !== userID);
+      if (approvedItem) {
+        // Mantem os totais de usuarios ativos da imobiliaria sincronizados apos aprovacao.
+        tenants = tenants.map((tenant) =>
+          tenant.tenant_id === approvedItem.tenant_id
+            ? { ...tenant, active_users: tenant.active_users + 1 }
+            : tenant
+        );
+      }
       delete pendingPasswords[userID];
       success = "Cadastro aprovado com sucesso.";
     } catch (err) {
@@ -43,26 +62,19 @@
     }
   }
 
-  $: filteredItems = items.filter((item) => {
-    const value = query.trim().toLowerCase();
-    if (!value) {
-      return true;
-    }
-    return (
-      item.tenant_name.toLowerCase().includes(value) ||
-      item.name.toLowerCase().includes(value) ||
-      item.email.toLowerCase().includes(value)
-    );
-  });
+  $: filteredItems = filterPendingRegistrations(items, query);
+  $: filteredTenants = filterTenantSummaries(tenants, query);
 
   $: totalPending = items.length;
   $: totalFiltered = filteredItems.length;
+  $: totalTenants = tenants.length;
+  $: totalFilteredTenants = filteredTenants.length;
 
   onMount(async () => {
     if (!requirePlatformAdmin()) {
       return;
     }
-    await loadPending();
+    await loadAdminData();
   });
 </script>
 
@@ -82,6 +94,14 @@
         <span class="stat-label">Resultados no filtro</span>
         <strong class="stat-value">{totalFiltered}</strong>
       </div>
+      <div class="stat-card">
+        <span class="stat-label">Imobiliarias cadastradas</span>
+        <strong class="stat-value">{totalTenants}</strong>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Imobiliarias no filtro</span>
+        <strong class="stat-value">{totalFilteredTenants}</strong>
+      </div>
     </div>
   </div>
 
@@ -99,7 +119,7 @@
     </div>
 
     <div class="actions">
-      <button class="btn ghost" on:click={loadPending} disabled={loading}>Atualizar</button>
+      <button class="btn ghost" on:click={loadAdminData} disabled={loading}>Atualizar</button>
     </div>
 
     {#if loading}
@@ -145,6 +165,50 @@
                       {savingUserID === item.user_id ? "Aprovando..." : "Aprovar"}
                     </button>
                   </td>
+                </tr>
+              {/each}
+            {/if}
+          </tbody>
+        </table>
+      </div>
+    {/if}
+  </div>
+
+  <div class="panel">
+    <div class="page-head">
+      <h2>Imobiliarias Cadastradas</h2>
+      <p>Consulte os tenants ja criados e a situacao de usuarios de cada imobiliaria.</p>
+    </div>
+
+    {#if loading}
+      <p>Carregando imobiliarias...</p>
+    {:else}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Imobiliaria</th>
+              <th>CNPJ</th>
+              <th>Email admin</th>
+              <th>Usuarios</th>
+              <th>Usuarios ativos</th>
+              <th>Cadastro</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#if filteredTenants.length === 0}
+              <tr>
+                <td colspan="6">Nenhuma imobiliaria encontrada para o filtro informado.</td>
+              </tr>
+            {:else}
+              {#each filteredTenants as tenant}
+                <tr>
+                  <td>{tenant.tenant_name}</td>
+                  <td>{tenant.tenant_cnpj || "-"}</td>
+                  <td>{tenant.admin_email || "-"}</td>
+                  <td>{tenant.total_users}</td>
+                  <td>{tenant.active_users}</td>
+                  <td>{new Date(tenant.created_at).toLocaleString("pt-BR")}</td>
                 </tr>
               {/each}
             {/if}

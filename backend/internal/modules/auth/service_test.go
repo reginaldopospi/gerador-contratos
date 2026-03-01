@@ -73,6 +73,32 @@ func (f *fakeRepo) GetUserByID(ctx context.Context, id string) (*User, error) {
 	return &u, nil
 }
 
+func (f *fakeRepo) ListTenants(ctx context.Context) ([]TenantSummary, error) {
+	items := make([]TenantSummary, 0)
+	for _, tenant := range f.tenants {
+		summary := TenantSummary{
+			TenantID:   tenant.ID,
+			TenantName: tenant.NomeFantasia,
+			TenantCNPJ: tenant.CNPJ,
+			CreatedAt:  tenant.CreatedAt,
+		}
+		for _, user := range f.users {
+			if user.TenantID != tenant.ID {
+				continue
+			}
+			summary.TotalUsers++
+			if user.IsActive {
+				summary.ActiveUsers++
+			}
+			if summary.AdminEmail == "" && user.Role == RoleAdmin {
+				summary.AdminEmail = user.Email
+			}
+		}
+		items = append(items, summary)
+	}
+	return items, nil
+}
+
 func (f *fakeRepo) ListPendingTenantAdmins(ctx context.Context) ([]PendingRegistration, error) {
 	items := make([]PendingRegistration, 0)
 	for _, user := range f.users {
@@ -514,5 +540,71 @@ func TestPlatformAdminCanLoginWithUsernameAlias(t *testing.T) {
 	}
 	if result.User.Email != "admin@plataforma.local" {
 		t.Fatalf("unexpected platform admin email: %s", result.User.Email)
+	}
+}
+
+func TestPlatformAdminCanListTenants(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, ServiceConfig{
+		AccessTokenTTL:        15 * time.Minute,
+		RefreshTokenTTL:       7 * 24 * time.Hour,
+		PasswordResetTTL:      30 * time.Minute,
+		JWTSecret:             "test-secret",
+		AppEnv:                "dev",
+		PlatformAdminUsername: "admin",
+		PlatformAdminEmail:    "admin@plataforma.local",
+		RegistrationApproval:  true,
+	})
+
+	if err := svc.BootstrapPlatformAdmin(context.Background(), PlatformAdminBootstrapInput{
+		TenantName: "Plataforma",
+		Name:       "Administrador da Plataforma",
+		Email:      "admin@plataforma.local",
+		Password:   "Admin12345",
+	}); err != nil {
+		t.Fatalf("bootstrap platform admin failed: %v", err)
+	}
+
+	_, err := svc.RegisterTenantAdmin(context.Background(), RegisterTenantAdminInput{
+		TenantName: "Imobiliaria Exemplo",
+		Name:       "Admin Imob",
+		Email:      "admin@imob.com",
+		Password:   "senhaInicial123",
+	}, ClientMetadata{})
+	if err != nil {
+		t.Fatalf("register tenant admin failed: %v", err)
+	}
+
+	items, err := svc.ListTenants(context.Background(), AuthClaims{
+		Role:  RoleAdmin,
+		Email: "admin@plataforma.local",
+	})
+	if err != nil {
+		t.Fatalf("list tenants failed: %v", err)
+	}
+	if len(items) == 0 {
+		t.Fatalf("expected at least one tenant")
+	}
+}
+
+func TestNonPlatformAdminCannotListTenants(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, ServiceConfig{
+		AccessTokenTTL:        15 * time.Minute,
+		RefreshTokenTTL:       7 * 24 * time.Hour,
+		PasswordResetTTL:      30 * time.Minute,
+		JWTSecret:             "test-secret",
+		AppEnv:                "dev",
+		PlatformAdminUsername: "admin",
+		PlatformAdminEmail:    "admin@plataforma.local",
+		RegistrationApproval:  true,
+	})
+
+	_, err := svc.ListTenants(context.Background(), AuthClaims{
+		Role:  RoleAdmin,
+		Email: "admin@tenant.com",
+	})
+	if err == nil {
+		t.Fatalf("expected forbidden error")
 	}
 }

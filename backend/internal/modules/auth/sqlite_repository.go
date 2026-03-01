@@ -108,6 +108,54 @@ func (r *SQLiteRepository) GetUserByID(ctx context.Context, id string) (*User, e
 	return &user, nil
 }
 
+// ListTenants lista as imobiliarias com metadados para administracao da plataforma.
+func (r *SQLiteRepository) ListTenants(ctx context.Context) ([]TenantSummary, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT
+			t.id,
+			t.nome_fantasia,
+			COALESCE(t.cnpj, ''),
+			t.created_at,
+			COALESCE(MIN(CASE WHEN u.role = 'admin' THEN u.email END), ''),
+			COUNT(u.id),
+			SUM(CASE WHEN u.is_active = 1 THEN 1 ELSE 0 END)
+		FROM tenants t
+		LEFT JOIN users u ON u.tenant_id = t.id
+		GROUP BY t.id, t.nome_fantasia, t.cnpj, t.created_at
+		ORDER BY t.created_at DESC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list tenants: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]TenantSummary, 0)
+	for rows.Next() {
+		var item TenantSummary
+		var activeUsers sql.NullInt64
+		if err := rows.Scan(
+			&item.TenantID,
+			&item.TenantName,
+			&item.TenantCNPJ,
+			&item.CreatedAt,
+			&item.AdminEmail,
+			&item.TotalUsers,
+			&activeUsers,
+		); err != nil {
+			return nil, fmt.Errorf("scan tenants: %w", err)
+		}
+		if activeUsers.Valid {
+			item.ActiveUsers = int(activeUsers.Int64)
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate tenants: %w", err)
+	}
+
+	return items, nil
+}
+
 // ListPendingTenantAdmins lista somente administradores de tenant ainda inativos.
 func (r *SQLiteRepository) ListPendingTenantAdmins(ctx context.Context) ([]PendingRegistration, error) {
 	rows, err := r.db.QueryContext(ctx, `

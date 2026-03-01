@@ -30,6 +30,7 @@ func (h *AuthHandler) RegisterRoutes(r chi.Router, requireAuth func(http.Handler
 		sr.Use(requireAuth)
 		sr.Get("/me", h.me)
 		sr.Post("/users", h.registerUser)
+		sr.Get("/tenants", h.listTenants)
 		sr.Get("/pending-registrations", h.listPendingRegistrations)
 		sr.Post("/pending-registrations/{userID}/approve", h.approvePendingRegistration)
 	})
@@ -164,6 +165,22 @@ func (h *AuthHandler) registerUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"user": user})
+}
+
+func (h *AuthHandler) listTenants(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		httpx.WriteError(w, common.NewUnauthorized("invalid_token", "token invalido"))
+		return
+	}
+
+	items, err := h.service.ListTenants(r.Context(), claims)
+	if err != nil {
+		httpx.WriteError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 func (h *AuthHandler) listPendingRegistrations(w http.ResponseWriter, r *http.Request) {

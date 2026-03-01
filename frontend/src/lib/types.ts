@@ -36,6 +36,16 @@ export interface PendingRegistration {
   created_at: string;
 }
 
+export interface TenantSummary {
+  tenant_id: string;
+  tenant_name: string;
+  tenant_cnpj?: string;
+  created_at: string;
+  admin_email?: string;
+  total_users: number;
+  active_users: number;
+}
+
 export interface Contract {
   id: string;
   tenant_id: string;

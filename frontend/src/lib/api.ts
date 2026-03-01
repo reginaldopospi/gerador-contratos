@@ -10,7 +10,8 @@ import type {
   ContractDetails,
   ContractPreview,
   PendingRegistration,
-  RegisterTenantResponse
+  RegisterTenantResponse,
+  TenantSummary
 } from "./types";
 
 const API_BASE = resolveApiBase(import.meta.env.VITE_API_BASE_URL);
@@ -150,6 +151,12 @@ export const api = {
 
   async listPendingRegistrations(): Promise<PendingRegistration[]> {
     const response = await request<{ items: PendingRegistration[] }>("/auth/pending-registrations");
+    return response.items;
+  },
+
+  async listTenants(): Promise<TenantSummary[]> {
+    // Lista as imobiliarias cadastradas para o painel do admin da plataforma.
+    const response = await request<{ items: TenantSummary[] }>("/auth/tenants");
     return response.items;
   },
 

@@ -84,6 +84,17 @@ type PendingRegistration struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
+// TenantSummary apresenta uma imobiliaria cadastrada para o painel administrativo.
+type TenantSummary struct {
+	TenantID    string    `json:"tenant_id"`
+	TenantName  string    `json:"tenant_name"`
+	TenantCNPJ  string    `json:"tenant_cnpj,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	AdminEmail  string    `json:"admin_email,omitempty"`
+	TotalUsers  int       `json:"total_users"`
+	ActiveUsers int       `json:"active_users"`
+}
+
 // ApproveRegistrationInput permite aprovar e opcionalmente redefinir a senha do cadastro.
 type ApproveRegistrationInput struct {
 	UserID      string

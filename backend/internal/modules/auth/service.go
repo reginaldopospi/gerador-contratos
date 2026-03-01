@@ -331,6 +331,14 @@ func (s *Service) ListPendingRegistrations(ctx context.Context, actor AuthClaims
 	return s.repo.ListPendingTenantAdmins(ctx)
 }
 
+// ListTenants retorna as imobiliarias cadastradas para a area administrativa.
+func (s *Service) ListTenants(ctx context.Context, actor AuthClaims) ([]TenantSummary, error) {
+	if !s.IsPlatformAdmin(actor) {
+		return nil, common.NewForbidden("insufficient_permissions", "somente admin da plataforma pode listar imobiliarias")
+	}
+	return s.repo.ListTenants(ctx)
+}
+
 // ApprovePendingRegistration ativa o cadastro e permite redefinir senha no momento da aprovacao.
 func (s *Service) ApprovePendingRegistration(ctx context.Context, actor AuthClaims, in ApproveRegistrationInput) (*User, error) {
 	if !s.IsPlatformAdmin(actor) {
