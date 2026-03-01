@@ -27,7 +27,8 @@ make dev
 ### 1) Backend
 
 ```bash
-go run ./backend/cmd/api
+cd backend
+go run ./cmd/api
 ```
 
 ### 2) Frontend

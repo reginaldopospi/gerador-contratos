@@ -13,10 +13,11 @@ Use `backend/.env.example` como referencia.
 ## Como rodar
 
 1. Instale Go 1.23+.
-2. Na raiz do projeto, execute:
+2. Na raiz do projeto, acesse o diretorio `backend` e execute:
 
 ```bash
-go run ./backend/cmd/api
+cd backend
+go run ./cmd/api
 ```
 
 3. Healthcheck:
@@ -60,7 +61,8 @@ Base: `/api/v1`
 ## Testes
 
 ```bash
-go test ./backend/...
+cd backend
+go test ./...
 ```
 
 ## Observacoes
