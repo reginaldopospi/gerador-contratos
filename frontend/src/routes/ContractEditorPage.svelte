@@ -2183,7 +2183,7 @@
   </div>
 
   <div class="panel">
-    <h2>Previa juridica automatica</h2>
+    <h2>Previa do Contrato</h2>
     {#if previewing}
       <p>Atualizando previa...</p>
     {/if}
