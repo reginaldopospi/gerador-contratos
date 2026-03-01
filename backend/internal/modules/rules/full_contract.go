@@ -283,10 +283,29 @@ func buildPartyQualification(data map[string]any, prefix string) string {
 	nome := valueOrFallback(strings.TrimSpace(getString(data, prefix+"__nome")), strings.TrimSpace(getString(data, prefix+"__razao_social")))
 	nacionalidade := strings.TrimSpace(getString(data, prefix+"__nacionalidade"))
 	estadoCivil := strings.TrimSpace(getString(data, prefix+"__estado_civil"))
+	regimeBens := strings.TrimSpace(getString(data, prefix+"__regime_bens"))
 	profissao := strings.TrimSpace(getString(data, prefix+"__profissao"))
 	rg := strings.TrimSpace(getString(data, prefix+"__rg"))
 	cpf := strings.TrimSpace(getString(data, prefix+"__cpf"))
 	endereco := strings.TrimSpace(getString(data, prefix+"__end__texto"))
+	conjugeTexto := buildConjugeQualificationText(data, prefix)
+
+	if requiresConjugeQualification(estadoCivil) {
+		// Mantem bloco do conjuge/companheiro(a) sempre presente para casado(a)/uniao estavel.
+		if strings.TrimSpace(conjugeTexto) == "" {
+			conjugeTexto = "(dados do conjuge/companheiro(a) nao informado)"
+		}
+		return strings.Join(filterNonEmpty(
+			strings.ToUpper(nome),
+			nacionalidade,
+			profissao,
+			ternaryStr(rg != "", "RG n. "+rg, ""),
+			ternaryStr(cpf != "", "CPF n. "+cpf, ""),
+			"e "+conjugeTexto,
+			buildConjugalStateText(estadoCivil, regimeBens),
+			ternaryStr(endereco != "", "e residentes na "+endereco, ""),
+		), ", ")
+	}
 
 	return strings.Join(filterNonEmpty(
 		strings.ToUpper(nome),
@@ -297,6 +316,46 @@ func buildPartyQualification(data map[string]any, prefix string) string {
 		ternaryStr(cpf != "", "CPF n. "+cpf, ""),
 		ternaryStr(endereco != "", "residente em "+endereco, ""),
 	), ", ")
+}
+// Regras de qualificacao exigem cÃ´njuge/companheiro(a) em casado(a) ou uniao estavel.
+func requiresConjugeQualification(estadoCivil string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(estadoCivil))
+	return normalized == "casado(a)" || normalized == "uniao estavel" || normalized == "uniÃ£o estÃ¡vel"
+}
+
+// Monta bloco textual da qualificacao do cÃ´njuge/companheiro(a).
+func buildConjugeQualificationText(data map[string]any, prefix string) string {
+	nome := strings.TrimSpace(getString(data, prefix+"__conj_nome"))
+	nacionalidade := strings.TrimSpace(getString(data, prefix+"__conj_nacionalidade"))
+	profissao := strings.TrimSpace(getString(data, prefix+"__conj_profissao"))
+	rg := strings.TrimSpace(getString(data, prefix+"__conj_rg"))
+	cpf := strings.TrimSpace(getString(data, prefix+"__conj_cpf"))
+
+	if nome == "" && nacionalidade == "" && profissao == "" && rg == "" && cpf == "" {
+		return ""
+	}
+	nomeExibicao := strings.ToUpper(valueOrFallback(nome, "(conjuge/companheiro(a) nao informado)"))
+	return strings.Join(filterNonEmpty(
+		nomeExibicao,
+		nacionalidade,
+		profissao,
+		ternaryStr(rg != "", "RG n. "+rg, ""),
+		ternaryStr(cpf != "", "CPF n. "+cpf, ""),
+	), ", ")
+}
+
+// Gera o trecho conjugal no formato juridico esperado para casado(a)/uniao estavel.
+func buildConjugalStateText(estadoCivil, regimeBens string) string {
+	normalized := strings.ToLower(strings.TrimSpace(estadoCivil))
+	base := "ambos casados entre si"
+	if normalized == "uniao estavel" || normalized == "união estável" {
+		base = "ambos conviventes em uniao estavel entre si"
+	}
+	regime := strings.TrimSpace(regimeBens)
+	if regime == "" {
+		return base
+	}
+	return base + " sob o regime de " + regime
 }
 
 func signatureLines(data map[string]any, sellerRole, buyerRole string) []string {

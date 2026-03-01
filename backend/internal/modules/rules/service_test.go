@@ -70,10 +70,64 @@ func TestBuildPreview_FullTextWithIndexedCustomClause(t *testing.T) {
 		},
 	})
 
-	if !strings.Contains(preview.FullText, "1.1.2 CLAUSULA X") {
-		t.Fatalf("expected indexed custom clause in full text")
+	// Clausulas indexadas priorizam conteudo juridico quando informado.
+	if !strings.Contains(preview.FullText, "1.1.2 Texto customizado de teste.") {
+		t.Fatalf("expected indexed custom clause content in full text")
 	}
 	if !strings.Contains(preview.FullText, "2.1.1 Aplica multa padrao.") {
 		t.Fatalf("expected indexed selected clause content in full text")
+	}
+}
+
+func TestBuildPartyQualification_IncludesConjugeForUniaoEstavel(t *testing.T) {
+	data := map[string]any{
+		"vend_1__tipo":              "Pessoa Fisica",
+		"vend_1__nome":              "Reginaldo Pospi do Nascimento Junior",
+		"vend_1__nacionalidade":     "brasileiro(a)",
+		"vend_1__estado_civil":      "uniao estavel",
+		"vend_1__regime_bens":       "comunhao parcial de bens",
+		"vend_1__profissao":         "advogado",
+		"vend_1__rg":                "44.497.309-6",
+		"vend_1__conj_nome":         "Maria Silva",
+		"vend_1__conj_nacionalidade": "brasileira",
+		"vend_1__conj_profissao":    "arquiteta",
+		"vend_1__conj_rg":           "11.222.333-4",
+		"vend_1__conj_cpf":          "111.222.333-44",
+		"vend_1__end__texto":        "Rua Miguel dos Santos, n.o 373, Jardim Casa Branca, Suzano/SP - CEP: 08663-040",
+	}
+
+	qualification := buildPartyQualification(data, "vend_1")
+	if !strings.Contains(qualification, "e MARIA SILVA, brasileira, arquiteta, RG n. 11.222.333-4, CPF n. 111.222.333-44") {
+		t.Fatalf("expected spouse data block in qualification: %s", qualification)
+	}
+	if !strings.Contains(qualification, "ambos conviventes em uniao estavel entre si sob o regime de comunhao parcial de bens") {
+		t.Fatalf("expected spouse details for uniao estavel: %s", qualification)
+	}
+	if !strings.Contains(qualification, "e residentes na Rua Miguel dos Santos") {
+		t.Fatalf("expected both residents wording: %s", qualification)
+	}
+}
+
+func TestBuildPartyQualification_IncludesConjugeForCasado(t *testing.T) {
+	data := map[string]any{
+		"compr_1__tipo":          "Pessoa Fisica",
+		"compr_1__nome":          "Joao Pereira",
+		"compr_1__nacionalidade": "brasileiro(a)",
+		"compr_1__estado_civil":  "casado(a)",
+		"compr_1__regime_bens":   "separacao total de bens",
+		"compr_1__profissao":     "engenheiro",
+		"compr_1__conj_nome":     "Ana Costa",
+		"compr_1__end__texto":    "Avenida Brasil, n.o 10, Sao Paulo/SP - CEP: 01000-000",
+	}
+
+	qualification := buildPartyQualification(data, "compr_1")
+	if !strings.Contains(qualification, "e ANA COSTA") {
+		t.Fatalf("expected spouse details for casado(a): %s", qualification)
+	}
+	if !strings.Contains(qualification, "ambos casados entre si sob o regime de separacao total de bens") {
+		t.Fatalf("expected spouse details for casado(a): %s", qualification)
+	}
+	if !strings.Contains(qualification, "e residentes na Avenida Brasil") {
+		t.Fatalf("expected both residents wording: %s", qualification)
 	}
 }
