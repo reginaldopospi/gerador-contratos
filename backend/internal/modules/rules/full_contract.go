@@ -273,11 +273,25 @@ func buildPartyQualification(data map[string]any, prefix string) string {
 		razao := valueOrFallback(strings.TrimSpace(getString(data, prefix+"__razao_social")), strings.TrimSpace(getString(data, prefix+"__nome")))
 		cnpj := strings.TrimSpace(getString(data, prefix+"__cnpj"))
 		endereco := strings.TrimSpace(getString(data, prefix+"__end__texto"))
-		return strings.Join(filterNonEmpty(
+		repNome := strings.ToUpper(strings.TrimSpace(getString(data, prefix+"__rep_nome")))
+		repCpf := strings.TrimSpace(getString(data, prefix+"__rep_cpf"))
+
+		parts := []string{
 			strings.ToUpper(razao),
 			ternaryStr(cnpj != "", "CNPJ n. "+cnpj, ""),
 			ternaryStr(endereco != "", "com sede em "+endereco, ""),
-		), ", ")
+		}
+		if repNome != "" {
+			// Segue o texto-base do codigo original para representar legalmente a PJ no contrato.
+			representacao := "neste ato representada por " + repNome
+			if repCpf != "" {
+				representacao += ", CPF n. " + repCpf
+			}
+			representacao += ", na forma de sua situacao cadastral de pessoa juridica da Receita Federal ou contrato social"
+			parts = append(parts, representacao)
+		}
+
+		return strings.Join(filterNonEmpty(parts...), ", ")
 	}
 
 	nome := valueOrFallback(strings.TrimSpace(getString(data, prefix+"__nome")), strings.TrimSpace(getString(data, prefix+"__razao_social")))

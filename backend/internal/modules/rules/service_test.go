@@ -131,3 +131,28 @@ func TestBuildPartyQualification_IncludesConjugeForCasado(t *testing.T) {
 		t.Fatalf("expected both residents wording: %s", qualification)
 	}
 }
+
+func TestBuildPartyQualification_IncludesRepresentanteForPJ(t *testing.T) {
+	data := map[string]any{
+		"pj_1__tipo":         "Pessoa Juridica",
+		"pj_1__razao_social": "58.132.597 REGINALDO POSPI DO NASCIMENTO JUNIOR",
+		"pj_1__cnpj":         "58.132.597/0001-08",
+		"pj_1__end__texto":   "Rua Benedito Augusto do Nascimento, n.o 30, Jardim Pilar, Maua/SP - CEP: 09370-060",
+		"pj_1__rep_nome":     "Reginaldo Pospi do Nascimento Junior",
+		"pj_1__rep_cpf":      "123.456.789-10",
+	}
+
+	qualification := buildPartyQualification(data, "pj_1")
+	if !strings.Contains(qualification, "CNPJ n. 58.132.597/0001-08") {
+		t.Fatalf("expected CNPJ in PJ qualification: %s", qualification)
+	}
+	if !strings.Contains(qualification, "neste ato representada por REGINALDO POSPI DO NASCIMENTO JUNIOR") {
+		t.Fatalf("expected representative name in PJ qualification: %s", qualification)
+	}
+	if !strings.Contains(qualification, "CPF n. 123.456.789-10") {
+		t.Fatalf("expected representative CPF in PJ qualification: %s", qualification)
+	}
+	if !strings.Contains(qualification, "na forma de sua situacao cadastral de pessoa juridica da Receita Federal ou contrato social") {
+		t.Fatalf("expected representative legal basis text in PJ qualification: %s", qualification)
+	}
+}
