@@ -11,7 +11,6 @@
   import {
     formatCnpj,
     isCompleteCnpj,
-    lookupCompanyByCnpj,
     onlyCnpjDigits
   } from "../lib/utils/cnpj";
   import { readInputValue, readSelectValue, readTextareaValue } from "../lib/utils/dom-events";
@@ -500,7 +499,7 @@
     setPartyCnpjLookupState(role, index, "loading", "Consultando CNPJ...");
 
     try {
-      const company = await lookupCompanyByCnpj(digits);
+      const company = await api.lookupCompanyByCnpj(digits);
       if (partyCnpjLookupRequestIds.get(lookupKey) !== requestId) {
         return;
       }

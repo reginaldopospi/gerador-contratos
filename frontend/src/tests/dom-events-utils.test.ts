@@ -22,6 +22,19 @@ describe("dom-events utils", () => {
     expect(readSelectValue(event)).toBe("Pessoa Juridica");
   });
 
+  it("deve ler select via currentTarget quando target for option", () => {
+    // Reproduz o caso em que o browser entrega target como OPTION no evento change.
+    const select = document.createElement("select");
+    const option = document.createElement("option");
+    option.value = "Pessoa Juridica";
+    option.text = "Pessoa Juridica";
+    select.appendChild(option);
+    select.value = "Pessoa Juridica";
+    const event = { target: option, currentTarget: select } as unknown as Event;
+
+    expect(readSelectValue(event)).toBe("Pessoa Juridica");
+  });
+
   it("deve ler valor de textarea e retornar vazio para tipo inesperado", () => {
     const textarea = document.createElement("textarea");
     textarea.value = "texto";

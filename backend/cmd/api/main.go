@@ -9,13 +9,14 @@ import (
 	"syscall"
 	"time"
 
-	apihttp "gerador-contratos/backend/internal/http"
-	"gerador-contratos/backend/internal/http/handlers"
 	"gerador-contratos/backend/internal/config"
 	"gerador-contratos/backend/internal/db"
+	apihttp "gerador-contratos/backend/internal/http"
+	"gerador-contratos/backend/internal/http/handlers"
 	"gerador-contratos/backend/internal/modules/auth"
 	"gerador-contratos/backend/internal/modules/brokers"
 	"gerador-contratos/backend/internal/modules/clauses"
+	"gerador-contratos/backend/internal/modules/cnpj"
 	"gerador-contratos/backend/internal/modules/contracts"
 	"gerador-contratos/backend/internal/modules/rules"
 )
@@ -53,11 +54,15 @@ func main() {
 	clausesRepo := clauses.NewSQLiteRepository(sqlDB)
 	clausesService := clauses.NewService(clausesRepo)
 
+	cnpjRepo := cnpj.NewBrasilAPIRepository(nil, "")
+	cnpjService := cnpj.NewService(cnpjRepo)
+
 	router := apihttp.NewRouter(apihttp.RouterDependencies{
 		AuthHandler:      handlers.NewAuthHandler(authService),
 		ContractsHandler: handlers.NewContractsHandler(contractsService),
 		BrokersHandler:   handlers.NewBrokersHandler(brokersService),
 		ClausesHandler:   handlers.NewClausesHandler(clausesService),
+		CNPJHandler:      handlers.NewCNPJHandler(cnpjService),
 		AuthValidator:    authService,
 	})
 

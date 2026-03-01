@@ -54,6 +54,8 @@ Base: `/api/v1`
   - `GET /clauses`
   - `POST /clauses`
   - `DELETE /clauses/{id}`
+- CNPJ (Receita Federal via integracao)
+  - `GET /cnpj/{cnpj}`
 
 ## Testes
 

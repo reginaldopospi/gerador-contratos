@@ -6,8 +6,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
-	custommw "gerador-contratos/backend/internal/http/middleware"
 	"gerador-contratos/backend/internal/http/handlers"
+	custommw "gerador-contratos/backend/internal/http/middleware"
 )
 
 type RouterDependencies struct {
@@ -15,6 +15,7 @@ type RouterDependencies struct {
 	ContractsHandler *handlers.ContractsHandler
 	BrokersHandler   *handlers.BrokersHandler
 	ClausesHandler   *handlers.ClausesHandler
+	CNPJHandler      *handlers.CNPJHandler
 	AuthValidator    custommw.AuthValidator
 }
 
@@ -47,8 +48,10 @@ func NewRouter(deps RouterDependencies) http.Handler {
 		api.Route("/clauses", func(cl chi.Router) {
 			deps.ClausesHandler.RegisterRoutes(cl, requireAuth)
 		})
+		api.Route("/cnpj", func(cr chi.Router) {
+			deps.CNPJHandler.RegisterRoutes(cr, requireAuth)
+		})
 	})
 
 	return r
 }
-

@@ -1,6 +1,7 @@
 import { clearAuth, getAuthState, setAuth } from "./stores/auth";
 import { resolveApiBase } from "./utils/api-base";
 import { resolveAPIError } from "./utils/api-error";
+import { isCompleteCnpj, onlyCnpjDigits, type CompanyByCnpj } from "./utils/cnpj";
 import type {
   AuthResponse,
   Broker,
@@ -276,6 +277,59 @@ export const api = {
 
   async deleteClause(clauseID: string): Promise<void> {
     await request(`/clauses/${clauseID}`, { method: "DELETE" });
+  },
+
+  async lookupCompanyByCnpj(cnpj: string): Promise<CompanyByCnpj | null> {
+    const digits = onlyCnpjDigits(cnpj);
+    if (!isCompleteCnpj(digits)) {
+      return null;
+    }
+
+    try {
+      const response = await request<{
+        company: {
+          cnpj: string;
+          razao_social: string;
+          endereco: {
+            cep: string;
+            logradouro: string;
+            numero: string;
+            complemento: string;
+            bairro: string;
+            cidade: string;
+            uf: string;
+          };
+        };
+      }>(`/cnpj/${digits}`);
+
+      if (!response.company) {
+        return null;
+      }
+
+      // Mantem o formato usado no editor para evitar alterações no restante do fluxo.
+      return {
+        cnpj: response.company.cnpj ?? "",
+        razaoSocial: response.company.razao_social ?? "",
+        endereco: {
+          cep: response.company.endereco?.cep ?? "",
+          logradouro: response.company.endereco?.logradouro ?? "",
+          numero: response.company.endereco?.numero ?? "",
+          complemento: response.company.endereco?.complemento ?? "",
+          bairro: response.company.endereco?.bairro ?? "",
+          cidade: response.company.endereco?.cidade ?? "",
+          uf: response.company.endereco?.uf ?? ""
+        }
+      };
+    } catch (err) {
+      if (
+        err instanceof APIError &&
+        err.status === 404 &&
+        err.code === "cnpj_not_found"
+      ) {
+        return null;
+      }
+      throw err;
+    }
   }
 };
 
