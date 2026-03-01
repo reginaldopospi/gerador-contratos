@@ -108,6 +108,56 @@ func (r *SQLiteRepository) GetUserByID(ctx context.Context, id string) (*User, e
 	return &user, nil
 }
 
+// ListPendingTenantAdmins lista somente administradores de tenant ainda inativos.
+func (r *SQLiteRepository) ListPendingTenantAdmins(ctx context.Context) ([]PendingRegistration, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT
+			u.id,
+			u.tenant_id,
+			t.nome_fantasia,
+			u.name,
+			u.email,
+			u.role,
+			u.is_active,
+			u.created_at
+		FROM users u
+		INNER JOIN tenants t ON t.id = u.tenant_id
+		WHERE u.role = ? AND u.is_active = 0
+		ORDER BY u.created_at ASC
+	`, string(RoleAdmin))
+	if err != nil {
+		return nil, fmt.Errorf("list pending tenant admins: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]PendingRegistration, 0)
+	for rows.Next() {
+		var item PendingRegistration
+		var role string
+		var isActive int
+		if err := rows.Scan(
+			&item.UserID,
+			&item.TenantID,
+			&item.TenantName,
+			&item.Name,
+			&item.Email,
+			&role,
+			&isActive,
+			&item.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan pending tenant admins: %w", err)
+		}
+		item.Role = Role(role)
+		item.IsActive = isActive == 1
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate pending tenant admins: %w", err)
+	}
+
+	return items, nil
+}
+
 func (r *SQLiteRepository) UpdateUserPassword(ctx context.Context, userID string, passwordHash string) error {
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE users
@@ -116,6 +166,19 @@ func (r *SQLiteRepository) UpdateUserPassword(ctx context.Context, userID string
 	`, passwordHash, userID)
 	if err != nil {
 		return fmt.Errorf("update user password: %w", err)
+	}
+	return nil
+}
+
+// SetUserActive altera o status de aprovacao do usuario.
+func (r *SQLiteRepository) SetUserActive(ctx context.Context, userID string, isActive bool) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE users
+		SET is_active = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`, boolToInt(isActive), userID)
+	if err != nil {
+		return fmt.Errorf("set user active: %w", err)
 	}
 	return nil
 }

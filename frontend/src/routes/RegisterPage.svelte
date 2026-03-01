@@ -10,10 +10,12 @@
   let password = "";
   let loading = false;
   let error = "";
+  let success = "";
 
   async function submit(): Promise<void> {
     loading = true;
     error = "";
+    success = "";
     try {
       const result = await api.registerTenant({
         tenant_name,
@@ -22,6 +24,16 @@
         email,
         password
       });
+
+      if (result.pending_approval || !result.tokens) {
+        success = result.message || "Cadastro enviado para aprovacao administrativa.";
+        tenant_name = "";
+        tenant_cnpj = "";
+        name = "";
+        email = "";
+        password = "";
+        return;
+      }
 
       setAuth({
         accessToken: result.tokens.access_token,
@@ -80,5 +92,9 @@
 
   {#if error}
     <div class="notice error">{error}</div>
+  {/if}
+
+  {#if success}
+    <div class="notice success">{success}</div>
   {/if}
 </section>

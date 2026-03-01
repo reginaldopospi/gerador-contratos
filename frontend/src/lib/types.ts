@@ -3,6 +3,7 @@ export interface AuthUser {
   tenant_id: string;
   email: string;
   role: "admin" | "gestor" | "operador";
+  is_platform_admin?: boolean;
 }
 
 export interface AuthTokens {
@@ -15,6 +16,24 @@ export interface AuthTokens {
 export interface AuthResponse {
   user: AuthUser;
   tokens: AuthTokens;
+}
+
+export interface RegisterTenantResponse {
+  user: AuthUser;
+  tokens?: AuthTokens;
+  pending_approval: boolean;
+  message: string;
+}
+
+export interface PendingRegistration {
+  user_id: string;
+  tenant_id: string;
+  tenant_name: string;
+  name: string;
+  email: string;
+  role: "admin" | "gestor" | "operador";
+  is_active: boolean;
+  created_at: string;
 }
 
 export interface Contract {

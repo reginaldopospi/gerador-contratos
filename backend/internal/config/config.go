@@ -4,7 +4,16 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
+)
+
+const (
+	// Valores padrao para facilitar desenvolvimento local do fluxo de aprovacao.
+	DefaultPlatformAdminEmail    = "admin@plataforma.local"
+	DefaultPlatformAdminPassword = "Admin12345"
+	DefaultPlatformAdminName     = "Administrador da Plataforma"
+	DefaultPlatformTenantName    = "Plataforma"
 )
 
 type Config struct {
@@ -22,6 +31,11 @@ type Config struct {
 	SMTPPass              string
 	SMTPFrom              string
 	PasswordResetURL      string
+	RegistrationApproval  bool
+	PlatformAdminEmail    string
+	PlatformAdminPassword string
+	PlatformAdminName     string
+	PlatformTenantName    string
 }
 
 func Load() Config {
@@ -40,6 +54,11 @@ func Load() Config {
 		SMTPPass:              getEnv("SMTP_PASS", ""),
 		SMTPFrom:              getEnv("SMTP_FROM", ""),
 		PasswordResetURL:      getEnv("PASSWORD_RESET_URL", ""),
+		RegistrationApproval:  getEnvAsBool("REQUIRE_REGISTRATION_APPROVAL", true),
+		PlatformAdminEmail:    getEnv("PLATFORM_ADMIN_EMAIL", DefaultPlatformAdminEmail),
+		PlatformAdminPassword: getEnv("PLATFORM_ADMIN_PASSWORD", DefaultPlatformAdminPassword),
+		PlatformAdminName:     getEnv("PLATFORM_ADMIN_NAME", DefaultPlatformAdminName),
+		PlatformTenantName:    getEnv("PLATFORM_TENANT_NAME", DefaultPlatformTenantName),
 	}
 }
 
@@ -60,6 +79,21 @@ func getEnvAsInt(name string, defaultValue int) int {
 		return defaultValue
 	}
 	return value
+}
+
+func getEnvAsBool(name string, defaultValue bool) bool {
+	value := strings.TrimSpace(strings.ToLower(getEnv(name, "")))
+	if value == "" {
+		return defaultValue
+	}
+	switch value {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return defaultValue
+	}
 }
 
 func defaultMigrationDir() string {

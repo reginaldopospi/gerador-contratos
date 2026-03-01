@@ -34,6 +34,7 @@ Aplicacao: `http://localhost:5173`
 - Cadastro inicial da imobiliaria (tenant + admin)
 - Login e logout
 - Recuperacao e redefinicao de senha
+- Ambiente de administracao da plataforma (`#/admin`) para aprovar cadastros pendentes e ajustar senha
 - Dashboard
 - Lista e criacao de contratos
 - Edicao de contrato por versao (JSON)

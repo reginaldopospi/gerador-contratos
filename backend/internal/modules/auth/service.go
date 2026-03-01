@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -18,6 +19,8 @@ type Service struct {
 	refreshTokenTTL       time.Duration
 	passwordResetTTL      time.Duration
 	appEnv                string
+	platformAdminEmail    string
+	registrationApproval  bool
 	passwordResetNotifier PasswordResetNotifier
 }
 
@@ -27,6 +30,8 @@ type ServiceConfig struct {
 	PasswordResetTTL      time.Duration
 	JWTSecret             string
 	AppEnv                string
+	PlatformAdminEmail    string
+	RegistrationApproval  bool
 	PasswordResetNotifier PasswordResetNotifier
 }
 
@@ -44,11 +49,13 @@ func NewService(repo Repository, cfg ServiceConfig) *Service {
 		refreshTokenTTL:       cfg.RefreshTokenTTL,
 		passwordResetTTL:      cfg.PasswordResetTTL,
 		appEnv:                cfg.AppEnv,
+		platformAdminEmail:    strings.TrimSpace(strings.ToLower(cfg.PlatformAdminEmail)),
+		registrationApproval:  cfg.RegistrationApproval,
 		passwordResetNotifier: notifier,
 	}
 }
 
-func (s *Service) RegisterTenantAdmin(ctx context.Context, in RegisterTenantAdminInput, metadata ClientMetadata) (*AuthResult, error) {
+func (s *Service) RegisterTenantAdmin(ctx context.Context, in RegisterTenantAdminInput, metadata ClientMetadata) (*RegisterTenantAdminResult, error) {
 	in.TenantName = strings.TrimSpace(in.TenantName)
 	in.Name = strings.TrimSpace(in.Name)
 	in.Email = strings.TrimSpace(strings.ToLower(in.Email))
@@ -87,13 +94,32 @@ func (s *Service) RegisterTenantAdmin(ctx context.Context, in RegisterTenantAdmi
 		Email:        in.Email,
 		PasswordHash: passwordHash,
 		Role:         RoleAdmin,
-		IsActive:     true,
+		// O admin cadastrado por autoatendimento pode ficar pendente ate aprovacao da plataforma.
+		IsActive: !s.registrationApproval,
 	}
 	if err := s.repo.CreateUser(ctx, user); err != nil {
 		return nil, err
 	}
 
-	return s.newAuthResult(ctx, user, metadata)
+	if s.registrationApproval {
+		user.PasswordHash = ""
+		return &RegisterTenantAdminResult{
+			User:            user,
+			PendingApproval: true,
+			Message:         "cadastro recebido e aguardando aprovacao administrativa",
+		}, nil
+	}
+
+	authResult, err := s.newAuthResult(ctx, user, metadata)
+	if err != nil {
+		return nil, err
+	}
+	return &RegisterTenantAdminResult{
+		User:            authResult.User,
+		Tokens:          &authResult.Tokens,
+		PendingApproval: false,
+		Message:         "cadastro aprovado e acesso liberado",
+	}, nil
 }
 
 func (s *Service) RegisterUser(ctx context.Context, actor AuthClaims, in RegisterUserInput) (*User, error) {
@@ -272,6 +298,131 @@ func (s *Service) ResetPassword(ctx context.Context, in ResetPasswordInput) erro
 	return nil
 }
 
+// IsPlatformAdmin valida se o ator autenticado pode aprovar novos cadastros.
+func (s *Service) IsPlatformAdmin(actor AuthClaims) bool {
+	if s.platformAdminEmail == "" {
+		return false
+	}
+	return actor.Role == RoleAdmin && strings.EqualFold(strings.TrimSpace(actor.Email), s.platformAdminEmail)
+}
+
+// ListPendingRegistrations retorna os cadastros de administradores aguardando aprovacao.
+func (s *Service) ListPendingRegistrations(ctx context.Context, actor AuthClaims) ([]PendingRegistration, error) {
+	if !s.IsPlatformAdmin(actor) {
+		return nil, common.NewForbidden("insufficient_permissions", "somente admin da plataforma pode listar cadastros pendentes")
+	}
+	return s.repo.ListPendingTenantAdmins(ctx)
+}
+
+// ApprovePendingRegistration ativa o cadastro e permite redefinir senha no momento da aprovacao.
+func (s *Service) ApprovePendingRegistration(ctx context.Context, actor AuthClaims, in ApproveRegistrationInput) (*User, error) {
+	if !s.IsPlatformAdmin(actor) {
+		return nil, common.NewForbidden("insufficient_permissions", "somente admin da plataforma pode aprovar cadastros")
+	}
+
+	in.UserID = strings.TrimSpace(in.UserID)
+	if in.UserID == "" {
+		return nil, common.NewBadRequest("invalid_user_id", "id do usuario e obrigatorio")
+	}
+
+	user, err := s.repo.GetUserByID(ctx, in.UserID)
+	if err != nil {
+		return nil, err
+	}
+	if user.Role != RoleAdmin {
+		return nil, common.NewBadRequest("invalid_registration_type", "apenas cadastros de administrador podem ser aprovados")
+	}
+	if user.IsActive {
+		return nil, common.NewConflict("already_approved", "cadastro ja aprovado")
+	}
+
+	if strings.TrimSpace(in.NewPassword) != "" {
+		if err := validatePassword(in.NewPassword); err != nil {
+			return nil, err
+		}
+		passwordHash, err := hashPassword(in.NewPassword)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.repo.UpdateUserPassword(ctx, user.ID, passwordHash); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := s.repo.SetUserActive(ctx, user.ID, true); err != nil {
+		return nil, err
+	}
+	user.IsActive = true
+	user.PasswordHash = ""
+	return user, nil
+}
+
+// BootstrapPlatformAdmin garante a existencia do usuario administrativo da plataforma.
+func (s *Service) BootstrapPlatformAdmin(ctx context.Context, in PlatformAdminBootstrapInput) error {
+	in.TenantName = strings.TrimSpace(in.TenantName)
+	in.Name = strings.TrimSpace(in.Name)
+	in.Email = strings.TrimSpace(strings.ToLower(in.Email))
+
+	if in.TenantName == "" {
+		in.TenantName = "Plataforma"
+	}
+	if in.Name == "" {
+		in.Name = "Administrador da Plataforma"
+	}
+	if !isValidEmail(in.Email) {
+		return common.NewBadRequest("invalid_platform_admin_email", "email do admin da plataforma e invalido")
+	}
+	if err := validatePassword(in.Password); err != nil {
+		return err
+	}
+	if s.platformAdminEmail != "" && !strings.EqualFold(in.Email, s.platformAdminEmail) {
+		return common.NewBadRequest("platform_admin_mismatch", "email informado nao corresponde ao admin da plataforma configurado")
+	}
+
+	passwordHash, err := hashPassword(in.Password)
+	if err != nil {
+		return err
+	}
+
+	existingUser, err := s.repo.GetUserByEmail(ctx, in.Email)
+	if err == nil {
+		if existingUser.Role != RoleAdmin {
+			return common.NewConflict("platform_admin_invalid_role", "usuario do admin da plataforma precisa ter perfil admin")
+		}
+		if err := s.repo.UpdateUserPassword(ctx, existingUser.ID, passwordHash); err != nil {
+			return err
+		}
+		if !existingUser.IsActive {
+			if err := s.repo.SetUserActive(ctx, existingUser.ID, true); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if !isUserNotFoundError(err) {
+		return err
+	}
+
+	tenant := Tenant{
+		ID:           uuid.NewString(),
+		NomeFantasia: in.TenantName,
+	}
+	if err := s.repo.CreateTenant(ctx, tenant); err != nil {
+		return err
+	}
+
+	user := User{
+		ID:           uuid.NewString(),
+		TenantID:     tenant.ID,
+		Name:         in.Name,
+		Email:        in.Email,
+		PasswordHash: passwordHash,
+		Role:         RoleAdmin,
+		IsActive:     true,
+	}
+	return s.repo.CreateUser(ctx, user)
+}
+
 func (s *Service) ValidateAccessToken(token string) (*AuthClaims, error) {
 	claims, err := s.tokens.parse(strings.TrimSpace(token))
 	if err != nil || claims.Type != "access" {
@@ -339,4 +490,12 @@ func isValidRole(role Role) bool {
 func isValidEmail(email string) bool {
 	email = strings.TrimSpace(email)
 	return strings.Contains(email, "@") && len(email) >= 5
+}
+
+func isUserNotFoundError(err error) bool {
+	var appErr *common.AppError
+	if !errors.As(err, &appErr) {
+		return false
+	}
+	return appErr.Code == "user_not_found"
 }

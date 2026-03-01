@@ -12,6 +12,9 @@ Use `backend/.env.example` como referencia.
 
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`: habilitam envio de e-mail no fluxo de recuperacao.
 - `PASSWORD_RESET_URL`: URL base usada no e-mail para montar o link com `token`.
+- `REQUIRE_REGISTRATION_APPROVAL`: quando `1`, novos cadastros entram como pendentes.
+- `PLATFORM_ADMIN_EMAIL`, `PLATFORM_ADMIN_PASSWORD`, `PLATFORM_ADMIN_NAME`, `PLATFORM_TENANT_NAME`: definem o admin que aprova cadastros pendentes.
+  - Em ambiente local, existem valores padrao para facilitar testes; em producao, configure valores proprios.
 
 ## Como rodar
 
@@ -41,6 +44,8 @@ Base: `/api/v1`
   - `POST /auth/reset-password`
   - `GET /auth/me` (Bearer)
   - `POST /auth/users` (Bearer)
+  - `GET /auth/pending-registrations` (Bearer, somente admin da plataforma)
+  - `POST /auth/pending-registrations/{userID}/approve` (Bearer, somente admin da plataforma)
 - Contratos
   - `GET /contracts`
   - `POST /contracts`
@@ -73,3 +78,4 @@ go test ./...
 - Migrations sao executadas automaticamente ao subir a API.
 - Em `APP_ENV=dev`, `forgot-password` retorna `dev_reset_token` no payload para facilitar testes.
 - Se SMTP estiver configurado, `forgot-password` envia token por e-mail; em caso de falha no envio, a API retorna erro.
+- Quando `REQUIRE_REGISTRATION_APPROVAL=1`, o cadastro inicial da imobiliaria nao recebe token imediatamente e precisa ser aprovado pelo admin da plataforma.

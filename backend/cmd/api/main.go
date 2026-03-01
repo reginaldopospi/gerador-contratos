@@ -28,6 +28,10 @@ func main() {
 		// Em producao, exige SMTP para que recuperacao de senha nao fique silenciosamente inoperante.
 		log.Fatal("smtp configuration is required when APP_ENV=prod")
 	}
+	if strings.EqualFold(cfg.AppEnv, "prod") && cfg.RegistrationApproval && isUsingDefaultPlatformCredentials(cfg) {
+		// Evita subir em producao com credenciais administrativas previsiveis.
+		log.Fatal("configure PLATFORM_ADMIN_EMAIL e PLATFORM_ADMIN_PASSWORD para producao")
+	}
 
 	sqlDB, err := db.OpenSQLite(cfg.DBPath)
 	if err != nil {
@@ -64,8 +68,21 @@ func main() {
 		PasswordResetTTL:      cfg.PasswordResetTokenTTL,
 		JWTSecret:             cfg.JWTSecret,
 		AppEnv:                cfg.AppEnv,
+		PlatformAdminEmail:    cfg.PlatformAdminEmail,
+		RegistrationApproval:  cfg.RegistrationApproval,
 		PasswordResetNotifier: passwordResetNotifier,
 	})
+	if cfg.RegistrationApproval {
+		// Garante um acesso administrativo unico para aprovar novos cadastros da plataforma.
+		if err := authService.BootstrapPlatformAdmin(ctx, auth.PlatformAdminBootstrapInput{
+			TenantName: cfg.PlatformTenantName,
+			Name:       cfg.PlatformAdminName,
+			Email:      cfg.PlatformAdminEmail,
+			Password:   cfg.PlatformAdminPassword,
+		}); err != nil {
+			log.Fatalf("bootstrap platform admin: %v", err)
+		}
+	}
 
 	rulesService := rules.NewService()
 	contractsRepo := contracts.NewSQLiteRepository(sqlDB)
@@ -122,4 +139,12 @@ func shouldConfigureSMTP(cfg config.Config) bool {
 		strings.TrimSpace(cfg.SMTPFrom) != "" ||
 		strings.TrimSpace(cfg.SMTPUser) != "" ||
 		strings.TrimSpace(cfg.SMTPPass) != ""
+}
+
+// isUsingDefaultPlatformCredentials detecta configuracao insegura padrao em producao.
+func isUsingDefaultPlatformCredentials(cfg config.Config) bool {
+	email := strings.TrimSpace(strings.ToLower(cfg.PlatformAdminEmail))
+	password := strings.TrimSpace(cfg.PlatformAdminPassword)
+	return email == strings.ToLower(config.DefaultPlatformAdminEmail) &&
+		password == config.DefaultPlatformAdminPassword
 }

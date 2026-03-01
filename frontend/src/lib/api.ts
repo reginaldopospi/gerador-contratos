@@ -8,7 +8,9 @@ import type {
   ClauseTemplate,
   Contract,
   ContractDetails,
-  ContractPreview
+  ContractPreview,
+  PendingRegistration,
+  RegisterTenantResponse
 } from "./types";
 
 const API_BASE = resolveApiBase(import.meta.env.VITE_API_BASE_URL);
@@ -117,8 +119,8 @@ export const api = {
     name: string;
     email: string;
     password: string;
-  }): Promise<AuthResponse> {
-    return request<AuthResponse>("/auth/register", {
+  }): Promise<RegisterTenantResponse> {
+    return request<RegisterTenantResponse>("/auth/register", {
       method: "POST",
       auth: false,
       body: input
@@ -144,6 +146,22 @@ export const api = {
     role: "admin" | "gestor" | "operador";
   }): Promise<{ user: AuthResponse["user"] }> {
     return request("/auth/users", { method: "POST", body: input });
+  },
+
+  async listPendingRegistrations(): Promise<PendingRegistration[]> {
+    const response = await request<{ items: PendingRegistration[] }>("/auth/pending-registrations");
+    return response.items;
+  },
+
+  async approvePendingRegistration(userID: string, newPassword = ""): Promise<{ user: AuthResponse["user"]; message: string }> {
+    // Permite ao admin da plataforma definir senha no momento da aprovacao.
+    return request<{ user: AuthResponse["user"]; message: string }>(
+      `/auth/pending-registrations/${encodeURIComponent(userID)}/approve`,
+      {
+        method: "POST",
+        body: { new_password: newPassword }
+      }
+    );
   },
 
   async forgotPassword(email: string): Promise<{ message: string; dev_reset_token?: string }> {

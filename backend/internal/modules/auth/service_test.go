@@ -73,9 +73,37 @@ func (f *fakeRepo) GetUserByID(ctx context.Context, id string) (*User, error) {
 	return &u, nil
 }
 
+func (f *fakeRepo) ListPendingTenantAdmins(ctx context.Context) ([]PendingRegistration, error) {
+	items := make([]PendingRegistration, 0)
+	for _, user := range f.users {
+		if user.Role != RoleAdmin || user.IsActive {
+			continue
+		}
+		tenant := f.tenants[user.TenantID]
+		items = append(items, PendingRegistration{
+			UserID:     user.ID,
+			TenantID:   user.TenantID,
+			TenantName: tenant.NomeFantasia,
+			Name:       user.Name,
+			Email:      user.Email,
+			Role:       user.Role,
+			IsActive:   user.IsActive,
+			CreatedAt:  user.CreatedAt,
+		})
+	}
+	return items, nil
+}
+
 func (f *fakeRepo) UpdateUserPassword(ctx context.Context, userID string, passwordHash string) error {
 	u := f.users[userID]
 	u.PasswordHash = passwordHash
+	f.users[userID] = u
+	return nil
+}
+
+func (f *fakeRepo) SetUserActive(ctx context.Context, userID string, isActive bool) error {
+	u := f.users[userID]
+	u.IsActive = isActive
 	f.users[userID] = u
 	return nil
 }
@@ -159,6 +187,9 @@ func TestRegisterAndLoginFlow(t *testing.T) {
 
 	if result.User.Role != RoleAdmin {
 		t.Fatalf("expected admin role, got %s", result.User.Role)
+	}
+	if result.Tokens == nil {
+		t.Fatalf("expected tokens")
 	}
 	if result.Tokens.AccessToken == "" || result.Tokens.RefreshToken == "" {
 		t.Fatalf("expected tokens")
@@ -321,5 +352,133 @@ func TestForgotPasswordReturnsErrorWhenNotificationFails(t *testing.T) {
 	}
 	if notifier.callCount != 1 {
 		t.Fatalf("expected notifier call, got %d", notifier.callCount)
+	}
+}
+
+func TestRegisterTenantAdminPendingApprovalFlow(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, ServiceConfig{
+		AccessTokenTTL:       15 * time.Minute,
+		RefreshTokenTTL:      7 * 24 * time.Hour,
+		PasswordResetTTL:     30 * time.Minute,
+		JWTSecret:            "test-secret",
+		AppEnv:               "dev",
+		PlatformAdminEmail:   "admin@plataforma.local",
+		RegistrationApproval: true,
+	})
+
+	result, err := svc.RegisterTenantAdmin(context.Background(), RegisterTenantAdminInput{
+		TenantName: "Imobiliaria Pendente",
+		Name:       "Novo Admin",
+		Email:      "novo@teste.com",
+		Password:   "senhaForte123",
+	}, ClientMetadata{})
+	if err != nil {
+		t.Fatalf("register failed: %v", err)
+	}
+	if !result.PendingApproval {
+		t.Fatalf("expected pending approval")
+	}
+	if result.Tokens != nil {
+		t.Fatalf("did not expect tokens when approval is required")
+	}
+
+	_, err = svc.Login(context.Background(), LoginInput{Email: "novo@teste.com", Password: "senhaForte123"}, ClientMetadata{})
+	if err == nil {
+		t.Fatalf("expected inactive user to fail login")
+	}
+}
+
+func TestPlatformAdminApprovesPendingRegistrationWithNewPassword(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, ServiceConfig{
+		AccessTokenTTL:       15 * time.Minute,
+		RefreshTokenTTL:      7 * 24 * time.Hour,
+		PasswordResetTTL:     30 * time.Minute,
+		JWTSecret:            "test-secret",
+		AppEnv:               "dev",
+		PlatformAdminEmail:   "admin@plataforma.local",
+		RegistrationApproval: true,
+	})
+
+	if err := svc.BootstrapPlatformAdmin(context.Background(), PlatformAdminBootstrapInput{
+		TenantName: "Plataforma",
+		Name:       "Administrador da Plataforma",
+		Email:      "admin@plataforma.local",
+		Password:   "Admin12345",
+	}); err != nil {
+		t.Fatalf("bootstrap platform admin failed: %v", err)
+	}
+
+	registerResult, err := svc.RegisterTenantAdmin(context.Background(), RegisterTenantAdminInput{
+		TenantName: "Imobiliaria Pendente",
+		Name:       "Novo Admin",
+		Email:      "novo@teste.com",
+		Password:   "senhaInicial123",
+	}, ClientMetadata{})
+	if err != nil {
+		t.Fatalf("register failed: %v", err)
+	}
+
+	actor := AuthClaims{
+		Role:  RoleAdmin,
+		Email: "admin@plataforma.local",
+	}
+	items, err := svc.ListPendingRegistrations(context.Background(), actor)
+	if err != nil {
+		t.Fatalf("list pending failed: %v", err)
+	}
+	if len(items) == 0 {
+		t.Fatalf("expected pending registrations")
+	}
+
+	approvedUser, err := svc.ApprovePendingRegistration(context.Background(), actor, ApproveRegistrationInput{
+		UserID:      registerResult.User.ID,
+		NewPassword: "NovaSenhaAprovada123",
+	})
+	if err != nil {
+		t.Fatalf("approve failed: %v", err)
+	}
+	if !approvedUser.IsActive {
+		t.Fatalf("expected approved user to be active")
+	}
+
+	_, err = svc.Login(context.Background(), LoginInput{
+		Email:    "novo@teste.com",
+		Password: "NovaSenhaAprovada123",
+	}, ClientMetadata{})
+	if err != nil {
+		t.Fatalf("login after approval failed: %v", err)
+	}
+}
+
+func TestNonPlatformAdminCannotApproveRegistrations(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, ServiceConfig{
+		AccessTokenTTL:       15 * time.Minute,
+		RefreshTokenTTL:      7 * 24 * time.Hour,
+		PasswordResetTTL:     30 * time.Minute,
+		JWTSecret:            "test-secret",
+		AppEnv:               "dev",
+		PlatformAdminEmail:   "admin@plataforma.local",
+		RegistrationApproval: true,
+	})
+
+	_, err := svc.RegisterTenantAdmin(context.Background(), RegisterTenantAdminInput{
+		TenantName: "Imobiliaria Pendente",
+		Name:       "Novo Admin",
+		Email:      "novo@teste.com",
+		Password:   "senhaInicial123",
+	}, ClientMetadata{})
+	if err != nil {
+		t.Fatalf("register failed: %v", err)
+	}
+
+	_, err = svc.ListPendingRegistrations(context.Background(), AuthClaims{
+		Role:  RoleAdmin,
+		Email: "admin@tenant.com",
+	})
+	if err == nil {
+		t.Fatalf("expected forbidden list for non-platform admin")
 	}
 }

@@ -30,6 +30,8 @@ func (h *AuthHandler) RegisterRoutes(r chi.Router, requireAuth func(http.Handler
 		sr.Use(requireAuth)
 		sr.Get("/me", h.me)
 		sr.Post("/users", h.registerUser)
+		sr.Get("/pending-registrations", h.listPendingRegistrations)
+		sr.Post("/pending-registrations/{userID}/approve", h.approvePendingRegistration)
 	})
 }
 
@@ -43,6 +45,17 @@ func (h *AuthHandler) registerTenantAdmin(w http.ResponseWriter, r *http.Request
 	result, err := h.service.RegisterTenantAdmin(r.Context(), input, requestMetadata(r))
 	if err != nil {
 		httpx.WriteError(w, err)
+		return
+	}
+
+	if result.Tokens != nil {
+		// Mantem o payload consistente com login, incluindo o indicador de admin da plataforma.
+		httpx.WriteJSON(w, http.StatusCreated, map[string]any{
+			"user":             h.authUserPayload(auth.AuthClaims{UserID: result.User.ID, TenantID: result.User.TenantID, Role: result.User.Role, Email: result.User.Email}),
+			"tokens":           result.Tokens,
+			"pending_approval": result.PendingApproval,
+			"message":          result.Message,
+		})
 		return
 	}
 
@@ -62,7 +75,7 @@ func (h *AuthHandler) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httpx.WriteJSON(w, http.StatusOK, result)
+	h.writeAuthResult(w, http.StatusOK, result)
 }
 
 func (h *AuthHandler) refresh(w http.ResponseWriter, r *http.Request) {
@@ -80,7 +93,7 @@ func (h *AuthHandler) refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httpx.WriteJSON(w, http.StatusOK, result)
+	h.writeAuthResult(w, http.StatusOK, result)
 }
 
 func (h *AuthHandler) forgotPassword(w http.ResponseWriter, r *http.Request) {
@@ -127,12 +140,7 @@ func (h *AuthHandler) me(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"user": map[string]any{
-			"id":        claims.UserID,
-			"tenant_id": claims.TenantID,
-			"email":     claims.Email,
-			"role":      claims.Role,
-		},
+		"user": h.authUserPayload(claims),
 	})
 }
 
@@ -158,9 +166,76 @@ func (h *AuthHandler) registerUser(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"user": user})
 }
 
+func (h *AuthHandler) listPendingRegistrations(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		httpx.WriteError(w, common.NewUnauthorized("invalid_token", "token invalido"))
+		return
+	}
+
+	items, err := h.service.ListPendingRegistrations(r.Context(), claims)
+	if err != nil {
+		httpx.WriteError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *AuthHandler) approvePendingRegistration(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		httpx.WriteError(w, common.NewUnauthorized("invalid_token", "token invalido"))
+		return
+	}
+
+	var body struct {
+		NewPassword string `json:"new_password"`
+	}
+	if err := httpx.DecodeJSON(r, &body); err != nil {
+		httpx.WriteError(w, common.NewBadRequest("invalid_payload", "payload invalido"))
+		return
+	}
+
+	userID := chi.URLParam(r, "userID")
+	user, err := h.service.ApprovePendingRegistration(r.Context(), claims, auth.ApproveRegistrationInput{
+		UserID:      userID,
+		NewPassword: body.NewPassword,
+	})
+	if err != nil {
+		httpx.WriteError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"user": user, "message": "cadastro aprovado com sucesso"})
+}
+
 func requestMetadata(r *http.Request) auth.ClientMetadata {
 	return auth.ClientMetadata{
 		IP:        r.RemoteAddr,
 		UserAgent: r.UserAgent(),
+	}
+}
+
+func (h *AuthHandler) writeAuthResult(w http.ResponseWriter, status int, result *auth.AuthResult) {
+	claims := auth.AuthClaims{
+		UserID:   result.User.ID,
+		TenantID: result.User.TenantID,
+		Role:     result.User.Role,
+		Email:    result.User.Email,
+	}
+	httpx.WriteJSON(w, status, map[string]any{
+		"user":   h.authUserPayload(claims),
+		"tokens": result.Tokens,
+	})
+}
+
+func (h *AuthHandler) authUserPayload(claims auth.AuthClaims) map[string]any {
+	return map[string]any{
+		"id":                claims.UserID,
+		"tenant_id":         claims.TenantID,
+		"email":             claims.Email,
+		"role":              claims.Role,
+		"is_platform_admin": h.service.IsPlatformAdmin(claims),
 	}
 }

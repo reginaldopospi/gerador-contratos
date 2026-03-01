@@ -7,7 +7,9 @@ type Repository interface {
 	CreateUser(ctx context.Context, user User) error
 	GetUserByEmail(ctx context.Context, email string) (*User, error)
 	GetUserByID(ctx context.Context, id string) (*User, error)
+	ListPendingTenantAdmins(ctx context.Context) ([]PendingRegistration, error)
 	UpdateUserPassword(ctx context.Context, userID string, passwordHash string) error
+	SetUserActive(ctx context.Context, userID string, isActive bool) error
 
 	CreateSession(ctx context.Context, session Session) error
 	GetSessionByHash(ctx context.Context, refreshTokenHash string) (*Session, error)
