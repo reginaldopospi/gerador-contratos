@@ -81,6 +81,14 @@ describe("ContractEditorPage party input behavior", () => {
   it("deve aplicar defaults de nacionalidade, mascaras e preencher endereco por CEP", async () => {
     render(ContractEditorPage, { params: { id: "ct-1" } });
 
+    // A secao de campos adicionais foi removida da interface.
+    expect(screen.queryByText("Campos adicionais")).not.toBeInTheDocument();
+    // A secao de clausulas personalizadas de entrega foi removida da interface.
+    await screen.findByRole("heading", { name: "Clausulas do contrato" });
+    expect(
+      screen.queryByRole("heading", { name: "Clausulas personalizadas de entrega" })
+    ).not.toBeInTheDocument();
+
     const typeSelects = await screen.findAllByLabelText("Tipo da parte");
     const sellerTypeSelect = typeSelects[0] as HTMLSelectElement;
     const sellerCard = sellerTypeSelect.closest(".party-card") as HTMLElement;

@@ -14,6 +14,7 @@
     onlyCnpjDigits
   } from "../lib/utils/cnpj";
   import { formatCpf } from "../lib/utils/cpf";
+  import { formatMoneyBR, maskMoneyInputBR, parseMoneyBR } from "../lib/utils/contract";
   import { readInputValue, readSelectValue, readTextareaValue } from "../lib/utils/dom-events";
   import type { ClauseTemplate, ContractDetails, ContractPreview, ContractVersion } from "../lib/types";
   import {
@@ -29,7 +30,6 @@
     normalizePartyType,
     type ContractEditorDraft,
     type DraftStringField,
-    type ExtraFieldType,
     type PartyDraft,
     type PartyRole
   } from "../lib/utils/contract-editor";
@@ -157,7 +157,38 @@
     { role: "compradores", title: "Parte compradora / cessionaria", idPrefix: "buyer" }
   ];
 
-  const paymentFields: Array<{ key: DraftStringField; label: string; placeholder: string }> = [
+  type PaymentMoneyField =
+    | "precoTotal"
+    | "precoFinanciamento"
+    | "precoFgts"
+    | "precoEntrada"
+    | "precoSinal"
+    | "precoRecursoProprio"
+    | "precoCartaCredito"
+    | "precoSubsidio"
+    | "precoParcelamentoTotal"
+    | "precoOutros";
+
+  // Mantem uma lista unica para aplicar mascara e calcular fechamento financeiro.
+  const PAYMENT_MONEY_FIELDS = [
+    "precoTotal",
+    "precoFinanciamento",
+    "precoFgts",
+    "precoEntrada",
+    "precoSinal",
+    "precoRecursoProprio",
+    "precoCartaCredito",
+    "precoSubsidio",
+    "precoParcelamentoTotal",
+    "precoOutros"
+  ] as const satisfies ReadonlyArray<PaymentMoneyField>;
+
+  // Soma de comparacao contra o preco total (sem contar o proprio total).
+  const PAYMENT_BREAKDOWN_FIELDS = PAYMENT_MONEY_FIELDS.filter(
+    (field) => field !== "precoTotal"
+  ) as Exclude<PaymentMoneyField, "precoTotal">[];
+
+  const paymentFields: Array<{ key: PaymentMoneyField; label: string; placeholder: string }> = [
     { key: "precoTotal", label: "Preco total", placeholder: "R$ 450.000,00" },
     { key: "precoFinanciamento", label: "Financiamento", placeholder: "R$ 300.000,00" },
     { key: "precoFgts", label: "FGTS", placeholder: "R$ 20.000,00" },
@@ -167,7 +198,7 @@
     { key: "precoCartaCredito", label: "Carta de credito", placeholder: "R$ 0,00" },
     { key: "precoSubsidio", label: "Subsidio", placeholder: "R$ 0,00" },
     { key: "precoParcelamentoTotal", label: "Parcelamento", placeholder: "R$ 15.000,00" },
-    { key: "precoOutros", label: "Outros valores", placeholder: "Detalhe complementos" }
+    { key: "precoOutros", label: "Outros valores", placeholder: "R$ 0,00" }
   ];
 
   const COMMISSION_PAYER_OPTIONS = [
@@ -193,6 +224,34 @@
   $: hideMatriculaDescription = isMatriculaAreaMaior(draft.imovelTipo);
   $: partyConditionalErrors = collectPartyConditionalErrors(draft);
   $: hasPartyConditionalBlockers = partyConditionalErrors.length > 0;
+  let paymentBreakdownTotalFormatted = "R$ 0,00";
+  let paymentBalanceNoticeType: "info" | "success" | "error" = "info";
+  let paymentBalanceMessage = "Informe o Preco total para validar se falta ou sobra valor.";
+
+  $: {
+    // Calcula o fechamento financeiro sempre que qualquer campo de pagamento mudar.
+    const precoTotal = roundMoneyValue(parseMoneyBR(draft.precoTotal));
+    const somaPagamentos = roundMoneyValue(
+      PAYMENT_BREAKDOWN_FIELDS.reduce((total, field) => total + parseMoneyBR(draft[field]), 0)
+    );
+    const diferenca = roundMoneyValue(precoTotal - somaPagamentos);
+
+    paymentBreakdownTotalFormatted = formatMoneyBR(somaPagamentos);
+
+    if (!hasMoneyDigits(draft.precoTotal)) {
+      paymentBalanceNoticeType = "info";
+      paymentBalanceMessage = "Informe o Preco total para validar se falta ou sobra valor.";
+    } else if (Math.abs(diferenca) < 0.005) {
+      paymentBalanceNoticeType = "success";
+      paymentBalanceMessage = "Soma dos pagamentos confere com o Preco total.";
+    } else if (diferenca > 0) {
+      paymentBalanceNoticeType = "error";
+      paymentBalanceMessage = `Faltam ${formatMoneyBR(diferenca)} para atingir o Preco total.`;
+    } else {
+      paymentBalanceNoticeType = "error";
+      paymentBalanceMessage = `Sobram ${formatMoneyBR(Math.abs(diferenca))} em relacao ao Preco total.`;
+    }
+  }
 
   async function load(): Promise<void> {
     loading = true;
@@ -400,6 +459,52 @@
     }
 
     draft = nextDraft;
+  }
+
+  // Mantem digitacao livre (sem distorcer o valor) durante o input.
+  function updatePaymentField(key: PaymentMoneyField, value: string): void {
+    updateField(key, sanitizePaymentInput(value));
+  }
+
+  // Remove prefixo/simbolos e preserva somente o necessario para parse de moeda BR.
+  function sanitizePaymentInput(value: string): string {
+    const compact = value.replace(/\s/g, "").replace(/^R\$/i, "");
+    if (compact === "") {
+      return "";
+    }
+    return compact.replace(/[^\d,.-]/g, "");
+  }
+
+  // Ao focar, mostra valor sem mascara para facilitar edicao manual.
+  function preparePaymentFieldForEdit(key: PaymentMoneyField): void {
+    const current = draft[key];
+    if (!current.includes("R$")) {
+      return;
+    }
+    const parsed = roundMoneyValue(parseMoneyBR(current));
+    if (Math.abs(parsed - Math.trunc(parsed)) < 0.005) {
+      updateField(key, String(Math.trunc(parsed)));
+      return;
+    }
+    updateField(key, parsed.toFixed(2).replace(".", ","));
+  }
+
+  // Ao sair do campo, aplica a mascara de moeda no valor digitado.
+  function formatPaymentFieldOnBlur(key: PaymentMoneyField): void {
+    const current = draft[key];
+    if (!hasMoneyDigits(current)) {
+      updateField(key, "");
+      return;
+    }
+    updateField(key, maskMoneyInputBR(current));
+  }
+
+  function roundMoneyValue(value: number): number {
+    return Math.round(value * 100) / 100;
+  }
+
+  function hasMoneyDigits(value: string): boolean {
+    return /\d/.test(value);
   }
 
   function listByRole(role: PartyRole): PartyDraft[] {
@@ -965,63 +1070,6 @@
     draft = { ...draft, [role]: next } as ContractEditorDraft;
   }
 
-  function addDeliveryClause(): void {
-    draft = {
-      ...draft,
-      clausulasEntregaChaves: [...draft.clausulasEntregaChaves, { key: "", text: "" }]
-    };
-  }
-
-  function updateDeliveryClause(index: number, key: "key" | "text", value: string): void {
-    const next = draft.clausulasEntregaChaves.map((item, i) =>
-      i === index ? { ...item, [key]: value } : item
-    );
-    draft = { ...draft, clausulasEntregaChaves: next };
-  }
-
-  function removeDeliveryClause(index: number): void {
-    const next = draft.clausulasEntregaChaves.filter((_, i) => i !== index);
-    draft = { ...draft, clausulasEntregaChaves: next };
-  }
-
-  function addExtraField(): void {
-    draft = {
-      ...draft,
-      extras: [...draft.extras, { key: "", type: "text", value: "" }]
-    };
-  }
-
-  function updateExtraKey(index: number, value: string): void {
-    const next = draft.extras.map((item, i) => (i === index ? { ...item, key: value } : item));
-    draft = { ...draft, extras: next };
-  }
-
-  function updateExtraType(index: number, value: ExtraFieldType): void {
-    const next = draft.extras.map((item, i) => {
-      if (i !== index) {
-        return item;
-      }
-      if (value === "boolean") {
-        return { ...item, type: value, value: item.value === "false" ? "false" : "true" };
-      }
-      if (value === "json" && item.value.trim() === "") {
-        return { ...item, type: value, value: "{}" };
-      }
-      return { ...item, type: value };
-    });
-    draft = { ...draft, extras: next };
-  }
-
-  function updateExtraValue(index: number, value: string): void {
-    const next = draft.extras.map((item, i) => (i === index ? { ...item, value } : item));
-    draft = { ...draft, extras: next };
-  }
-
-  function removeExtraField(index: number): void {
-    const next = draft.extras.filter((_, i) => i !== index);
-    draft = { ...draft, extras: next };
-  }
-
   function addClauseTag(clauseKey: string): void {
     const key = clauseKey.trim();
     if (key === "") {
@@ -1285,6 +1333,162 @@
       </div>
 
       <div class="editor-form">
+
+        <section class="editor-section">
+          <div class="editor-section-head">
+            <h3>Imovel</h3>
+            <p>Dados essenciais do objeto contratual.</p>
+          </div>
+
+          <div class="property-layout">
+            <div class="property-column">
+              <h4>Endereco do imovel</h4>
+
+              <div class="grid cols-2">
+                {#each propertyAddressFields as field}
+                  <div class="field">
+                    <label for={`property_${field.key}`}>{field.label}</label>
+                    {#if field.key === "imovelCep"}
+                      <input
+                        id={`property_${field.key}`}
+                        value={draft[field.key]}
+                        placeholder={field.placeholder}
+                        on:input={handleCepInput}
+                      />
+                      {#if cepLookupStatus === "loading"}
+                        <small class="field-feedback info">{cepLookupMessage}</small>
+                      {:else if cepLookupStatus === "error"}
+                        <small class="field-feedback error">{cepLookupMessage}</small>
+                      {:else if cepLookupStatus === "success"}
+                        <small class="field-feedback info">{cepLookupMessage}</small>
+                      {/if}
+                    {:else}
+                      <input
+                        id={`property_${field.key}`}
+                        value={draft[field.key]}
+                        placeholder={field.placeholder}
+                        on:input={(event) => updateField(field.key, inputValue(event))}
+                      />
+                    {/if}
+                  </div>
+                {/each}
+              </div>
+
+              <div class="field">
+                <label for="property_imovelEndereco">Endereco completo (gerado)</label>
+                <textarea id="property_imovelEndereco" value={propertyAddressPreview} rows="3" disabled></textarea>
+              </div>
+            </div>
+
+            <div class="property-column">
+              <h4>Identificacao</h4>
+
+              <div class="field">
+                <label for="property_imovelTipo">Tipo do imovel</label>
+                <select
+                  id="property_imovelTipo"
+                  value={draft.imovelTipo}
+                  on:change={(event) => updateField("imovelTipo", selectValue(event))}
+                >
+                  <option value="">Selecione</option>
+                  {#if draft.imovelTipo.trim() !== "" && !isKnownPropertyType(draft.imovelTipo)}
+                    <option value={draft.imovelTipo}>{draft.imovelTipo}</option>
+                  {/if}
+                  {#each PROPERTY_TYPE_OPTIONS as option}
+                    <option value={option}>{option}</option>
+                  {/each}
+                </select>
+              </div>
+
+              <div class="grid cols-2">
+                {#each propertyIdentificationFields as field}
+                  <div class="field">
+                    <label for={`property_${field.key}`}>{field.label}</label>
+                    <input
+                      id={`property_${field.key}`}
+                      value={draft[field.key]}
+                      placeholder={field.placeholder}
+                      on:input={(event) => updateField(field.key, inputValue(event))}
+                    />
+                  </div>
+                {/each}
+              </div>
+
+              <div class="editor-subsection">
+                <h4>Informacoes adicionais</h4>
+
+                <div class="property-toggle-grid">
+                  {#each propertyToggleFields as field}
+                    <div class="field">
+                      <span class="field-static-label">{field.label}</span>
+                      <div class="radio-inline">
+                        {#each YES_NO_OPTIONS as option}
+                          <label>
+                            <input
+                              type="radio"
+                              name={`property_${field.key}`}
+                              value={option}
+                              checked={draft[field.key] === option}
+                              on:change={(event) => updateField(field.key, inputValue(event))}
+                            />
+                            <span>{option}</span>
+                          </label>
+                        {/each}
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+
+                {#if draft.imovelAlugado === "SIM"}
+                  <div class="field">
+                    <label for="property_imovelLocacao">
+                      O inquilino vai desocupar o imovel ou a parte compradora vai assumir a locacao?
+                    </label>
+                    <textarea
+                      id="property_imovelLocacao"
+                      value={draft.imovelLocacao}
+                      rows="4"
+                      on:input={(event) => updateField("imovelLocacao", textareaValue(event))}
+                    ></textarea>
+                  </div>
+                {/if}
+
+                {#if draft.imovelFicaraBens === "SIM"}
+                  <div class="field">
+                    <label for="property_imovelBens">
+                      O que ficara no imovel? (indicar somente os bens)
+                    </label>
+                    <textarea
+                      id="property_imovelBens"
+                      value={draft.imovelBens}
+                      rows="4"
+                      on:input={(event) => updateField("imovelBens", textareaValue(event))}
+                    ></textarea>
+                  </div>
+                {/if}
+              </div>
+            </div>
+          </div>
+
+          <div class="editor-subsection">
+            <h4>Descricao do imovel na matricula</h4>
+
+            {#if hideMatriculaDescription}
+              <div class="notice info">
+                Regra aplicada: nao lancar descricao do imovel para tipo com matricula em area maior.
+              </div>
+            {:else}
+              <div class="field">
+                <textarea
+                  id="property_imovelDescricaoMatricula"
+                  value={draft.imovelDescricaoMatricula}
+                  rows="6"
+                  on:input={(event) => updateField("imovelDescricaoMatricula", textareaValue(event))}
+                ></textarea>
+              </div>
+            {/if}
+          </div>
+        </section>
         <section class="editor-section">
           <div class="editor-section-head">
             <h3>Partes do contrato</h3>
@@ -1685,162 +1889,6 @@
 
         <section class="editor-section">
           <div class="editor-section-head">
-            <h3>Imovel</h3>
-            <p>Dados essenciais do objeto contratual.</p>
-          </div>
-
-          <div class="property-layout">
-            <div class="property-column">
-              <h4>Endereco do imovel</h4>
-
-              <div class="grid cols-2">
-                {#each propertyAddressFields as field}
-                  <div class="field">
-                    <label for={`property_${field.key}`}>{field.label}</label>
-                    {#if field.key === "imovelCep"}
-                      <input
-                        id={`property_${field.key}`}
-                        value={draft[field.key]}
-                        placeholder={field.placeholder}
-                        on:input={handleCepInput}
-                      />
-                      {#if cepLookupStatus === "loading"}
-                        <small class="field-feedback info">{cepLookupMessage}</small>
-                      {:else if cepLookupStatus === "error"}
-                        <small class="field-feedback error">{cepLookupMessage}</small>
-                      {:else if cepLookupStatus === "success"}
-                        <small class="field-feedback info">{cepLookupMessage}</small>
-                      {/if}
-                    {:else}
-                      <input
-                        id={`property_${field.key}`}
-                        value={draft[field.key]}
-                        placeholder={field.placeholder}
-                        on:input={(event) => updateField(field.key, inputValue(event))}
-                      />
-                    {/if}
-                  </div>
-                {/each}
-              </div>
-
-              <div class="field">
-                <label for="property_imovelEndereco">Endereco completo (gerado)</label>
-                <textarea id="property_imovelEndereco" value={propertyAddressPreview} rows="3" disabled></textarea>
-              </div>
-            </div>
-
-            <div class="property-column">
-              <h4>Identificacao</h4>
-
-              <div class="field">
-                <label for="property_imovelTipo">Tipo do imovel</label>
-                <select
-                  id="property_imovelTipo"
-                  value={draft.imovelTipo}
-                  on:change={(event) => updateField("imovelTipo", selectValue(event))}
-                >
-                  <option value="">Selecione</option>
-                  {#if draft.imovelTipo.trim() !== "" && !isKnownPropertyType(draft.imovelTipo)}
-                    <option value={draft.imovelTipo}>{draft.imovelTipo}</option>
-                  {/if}
-                  {#each PROPERTY_TYPE_OPTIONS as option}
-                    <option value={option}>{option}</option>
-                  {/each}
-                </select>
-              </div>
-
-              <div class="grid cols-2">
-                {#each propertyIdentificationFields as field}
-                  <div class="field">
-                    <label for={`property_${field.key}`}>{field.label}</label>
-                    <input
-                      id={`property_${field.key}`}
-                      value={draft[field.key]}
-                      placeholder={field.placeholder}
-                      on:input={(event) => updateField(field.key, inputValue(event))}
-                    />
-                  </div>
-                {/each}
-              </div>
-
-              <div class="editor-subsection">
-                <h4>Informacoes adicionais</h4>
-
-                <div class="property-toggle-grid">
-                  {#each propertyToggleFields as field}
-                    <div class="field">
-                      <span class="field-static-label">{field.label}</span>
-                      <div class="radio-inline">
-                        {#each YES_NO_OPTIONS as option}
-                          <label>
-                            <input
-                              type="radio"
-                              name={`property_${field.key}`}
-                              value={option}
-                              checked={draft[field.key] === option}
-                              on:change={(event) => updateField(field.key, inputValue(event))}
-                            />
-                            <span>{option}</span>
-                          </label>
-                        {/each}
-                      </div>
-                    </div>
-                  {/each}
-                </div>
-
-                {#if draft.imovelAlugado === "SIM"}
-                  <div class="field">
-                    <label for="property_imovelLocacao">
-                      O inquilino vai desocupar o imovel ou a parte compradora vai assumir a locacao?
-                    </label>
-                    <textarea
-                      id="property_imovelLocacao"
-                      value={draft.imovelLocacao}
-                      rows="4"
-                      on:input={(event) => updateField("imovelLocacao", textareaValue(event))}
-                    ></textarea>
-                  </div>
-                {/if}
-
-                {#if draft.imovelFicaraBens === "SIM"}
-                  <div class="field">
-                    <label for="property_imovelBens">
-                      O que ficara no imovel? (indicar somente os bens)
-                    </label>
-                    <textarea
-                      id="property_imovelBens"
-                      value={draft.imovelBens}
-                      rows="4"
-                      on:input={(event) => updateField("imovelBens", textareaValue(event))}
-                    ></textarea>
-                  </div>
-                {/if}
-              </div>
-            </div>
-          </div>
-
-          <div class="editor-subsection">
-            <h4>Descricao do imovel na matricula</h4>
-
-            {#if hideMatriculaDescription}
-              <div class="notice info">
-                Regra aplicada: nao lancar descricao do imovel para tipo com matricula em area maior.
-              </div>
-            {:else}
-              <div class="field">
-                <textarea
-                  id="property_imovelDescricaoMatricula"
-                  value={draft.imovelDescricaoMatricula}
-                  rows="6"
-                  on:input={(event) => updateField("imovelDescricaoMatricula", textareaValue(event))}
-                ></textarea>
-              </div>
-            {/if}
-          </div>
-        </section>
-
-        <section class="editor-section">
-          <div class="editor-section-head">
             <h3>Pagamento</h3>
             <p>Preencha somente os valores que se aplicam ao contrato.</p>
           </div>
@@ -1853,10 +1901,20 @@
                   id={`payment_${field.key}`}
                   value={draft[field.key]}
                   placeholder={field.placeholder}
-                  on:input={(event) => updateField(field.key, inputValue(event))}
+                  on:input={(event) => updatePaymentField(field.key, inputValue(event))}
+                  on:focus={() => preparePaymentFieldForEdit(field.key)}
+                  on:blur={() => formatPaymentFieldOnBlur(field.key)}
                 />
               </div>
             {/each}
+          </div>
+
+          <div class="payment-summary">
+            <div class="field">
+              <label for="payment_breakdown_total">Soma dos valores preenchidos</label>
+              <input id="payment_breakdown_total" value={paymentBreakdownTotalFormatted} readonly />
+            </div>
+            <div class={`notice ${paymentBalanceNoticeType}`}>{paymentBalanceMessage}</div>
           </div>
         </section>
 
@@ -2025,6 +2083,7 @@
               </div>
             {/if}
           </div>
+
         </section>
 
         <section class="editor-section">
@@ -2061,132 +2120,8 @@
             </div>
           {/if}
 
-          <div class="editor-subsection">
-            <div class="party-column-head">
-              <h4>Clausulas personalizadas de entrega</h4>
-              <button class="btn ghost btn-sm" on:click={addDeliveryClause}>Adicionar clausula</button>
-            </div>
-
-            {#if draft.clausulasEntregaChaves.length === 0}
-              <p class="hint">Nenhuma clausula personalizada cadastrada.</p>
-            {:else}
-              <div class="delivery-clause-list">
-                {#each draft.clausulasEntregaChaves as clause, index}
-                  <div class="delivery-clause-card">
-                    <div class="grid cols-2">
-                      <div class="field">
-                        <label for={`delivery_key_${index}`}>Nome da opcao</label>
-                        <input
-                          id={`delivery_key_${index}`}
-                          value={clause.key}
-                          placeholder="Ex.: Na vistoria final"
-                          on:input={(event) =>
-                            updateDeliveryClause(index, "key", inputValue(event))}
-                        />
-                      </div>
-                      <div class="field span-all">
-                        <label for={`delivery_text_${index}`}>Texto juridico</label>
-                        <textarea
-                          id={`delivery_text_${index}`}
-                          value={clause.text}
-                          placeholder="Texto que sera utilizado quando esta opcao for escolhida."
-                          on:input={(event) =>
-                            updateDeliveryClause(index, "text", textareaValue(event))}
-                        ></textarea>
-                      </div>
-                    </div>
-
-                    <div class="inline-actions">
-                      <button class="btn ghost btn-sm" on:click={() => removeDeliveryClause(index)}>
-                        Remover
-                      </button>
-                    </div>
-                  </div>
-                {/each}
-              </div>
-            {/if}
-          </div>
         </section>
 
-        <section class="editor-section">
-          <div class="editor-section-head">
-            <h3>Campos adicionais</h3>
-            <p>Use para qualquer dado extra que nao esteja no formulario principal.</p>
-          </div>
-
-          <div class="actions">
-            <button class="btn ghost" on:click={addExtraField}>Adicionar campo</button>
-          </div>
-
-          <div class="table-wrap">
-            <table class="extras-table">
-              <thead>
-                <tr>
-                  <th>Chave</th>
-                  <th>Tipo</th>
-                  <th>Valor</th>
-                  <th>Acoes</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#if draft.extras.length === 0}
-                  <tr><td colspan="4">Sem campos adicionais.</td></tr>
-                {:else}
-                  {#each draft.extras as extra, index}
-                    <tr>
-                      <td>
-                        <input
-                          value={extra.key}
-                          placeholder="exemplo__chave"
-                          on:input={(event) => updateExtraKey(index, inputValue(event))}
-                        />
-                      </td>
-                      <td>
-                        <select
-                          value={extra.type}
-                          on:change={(event) =>
-                            updateExtraType(index, selectValue(event) as ExtraFieldType)}
-                        >
-                          <option value="text">Texto</option>
-                          <option value="number">Numero</option>
-                          <option value="boolean">Booleano</option>
-                          <option value="json">JSON</option>
-                        </select>
-                      </td>
-                      <td class="value-cell">
-                        {#if extra.type === "boolean"}
-                          <select
-                            value={extra.value === "false" ? "false" : "true"}
-                            on:change={(event) => updateExtraValue(index, selectValue(event))}
-                          >
-                            <option value="true">true</option>
-                            <option value="false">false</option>
-                          </select>
-                        {:else if extra.type === "json"}
-                          <textarea
-                            class="mini-json"
-                            value={extra.value}
-                            on:input={(event) => updateExtraValue(index, textareaValue(event))}
-                          ></textarea>
-                        {:else}
-                          <input
-                            value={extra.value}
-                            on:input={(event) => updateExtraValue(index, inputValue(event))}
-                          />
-                        {/if}
-                      </td>
-                      <td>
-                        <button class="btn danger btn-sm" on:click={() => removeExtraField(index)}>
-                          Excluir
-                        </button>
-                      </td>
-                    </tr>
-                  {/each}
-                {/if}
-              </tbody>
-            </table>
-          </div>
-        </section>
       </div>
 
       <div class="actions">
@@ -2435,6 +2370,13 @@
     margin-top: 8px;
   }
 
+  .payment-summary {
+    border-top: 1px solid #dce8f6;
+    padding-top: 10px;
+    display: grid;
+    gap: 8px;
+  }
+
   .clause-suggestion-list {
     border: 1px solid #d8e5f6;
     border-radius: 12px;
@@ -2533,21 +2475,6 @@
     font-size: 0.92rem;
   }
 
-  .extras-table th,
-  .extras-table td {
-    min-width: 140px;
-  }
-
-  .extras-table .value-cell {
-    min-width: 280px;
-  }
-
-  .mini-json {
-    min-height: 88px;
-    font-family: "Cascadia Code", "Consolas", monospace;
-    font-size: 0.86rem;
-  }
-
   .full-contract-preview {
     margin-top: 10px;
     border: 1px solid #d5e3f5;
@@ -2577,8 +2504,5 @@
       flex-wrap: wrap;
     }
 
-    .extras-table .value-cell {
-      min-width: 220px;
-    }
   }
 </style>
