@@ -5,19 +5,17 @@ export function readInputValue(event: Event): string {
 }
 
 export function readSelectValue(event: Event): string {
-  // Em alguns navegadores o target do change pode ser OPTION; usamos currentTarget primeiro.
-  const current = event.currentTarget as EventTarget | null;
-  if (current instanceof HTMLSelectElement) {
-    return current.value;
-  }
-
+  // Prioriza target para capturar o valor mais recente selecionado.
   const target = event.target as EventTarget | null;
   if (target instanceof HTMLSelectElement) {
     return target.value;
   }
 
-  // Em eventos delegados, target pode ser OPTION; subimos para o SELECT pai.
+  // Em alguns navegadores o target do change pode ser OPTION.
   if (target instanceof HTMLOptionElement) {
+    if (target.value !== "") {
+      return target.value;
+    }
     const selectFromOption = target.closest("select");
     if (selectFromOption instanceof HTMLSelectElement) {
       return selectFromOption.value;
@@ -30,6 +28,12 @@ export function readSelectValue(event: Event): string {
     if (closestSelect instanceof HTMLSelectElement) {
       return closestSelect.value;
     }
+  }
+
+  // Fallback para casos em que apenas currentTarget venha tipado como SELECT.
+  const current = event.currentTarget as EventTarget | null;
+  if (current instanceof HTMLSelectElement) {
+    return current.value;
   }
 
   return "";

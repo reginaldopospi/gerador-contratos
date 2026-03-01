@@ -231,7 +231,8 @@ export function emptyPartyDraft(role: PartyRole, index: number): PartyDraft {
     tipo: "",
     nome: "",
     razaoSocial: "",
-    nacionalidade: "brasileiro",
+    // Mantem nacionalidade inicial generica para reduzir ajustes manuais no cadastro.
+    nacionalidade: "brasileiro(a)",
     nacionalidadeOutra: "",
     rg: "",
     cpf: "",
@@ -240,7 +241,7 @@ export function emptyPartyDraft(role: PartyRole, index: number): PartyDraft {
     regimeBens: "",
     regimeBensOutro: "",
     conjNome: "",
-    conjNacionalidade: "brasileiro",
+    conjNacionalidade: "brasileiro(a)",
     conjNacionalidadeOutra: "",
     conjProfissao: "",
     conjRg: "",

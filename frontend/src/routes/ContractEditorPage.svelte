@@ -13,6 +13,7 @@
     isCompleteCnpj,
     onlyCnpjDigits
   } from "../lib/utils/cnpj";
+  import { formatCpf } from "../lib/utils/cpf";
   import { readInputValue, readSelectValue, readTextareaValue } from "../lib/utils/dom-events";
   import type { ClauseTemplate, ContractDetails, ContractPreview, ContractVersion } from "../lib/types";
   import {
@@ -58,9 +59,14 @@
   let lastFetchedCep = "";
   let partyConditionalErrors: string[] = [];
   let hasPartyConditionalBlockers = false;
-  let partyCnpjLookup = new Map<string, { status: "idle" | "loading" | "error" | "success"; message: string }>();
+  type LookupStatus = "idle" | "loading" | "error" | "success";
+  type LookupState = { status: LookupStatus; message: string };
+  let partyCnpjLookup = new Map<string, LookupState>();
   const partyCnpjLookupRequestIds = new Map<string, number>();
   const partyLastFetchedCnpj = new Map<string, string>();
+  let partyCepLookup = new Map<string, LookupState>();
+  const partyCepLookupRequestIds = new Map<string, number>();
+  const partyLastFetchedCep = new Map<string, string>();
 
   type PropertyToggleField = "imovelParFar" | "imovelAlienado" | "imovelAlugado" | "imovelFicaraBens";
 
@@ -107,6 +113,7 @@
 
   const PARTY_TYPE_OPTIONS = ["Pessoa Fisica", "Pessoa Juridica"] as const;
   const PARTY_NACIONALIDADE_OPTIONS = [
+    "brasileiro(a)",
     "brasileiro",
     "brasileira",
     "portuguesa",
@@ -393,6 +400,11 @@
 
   function listByRole(role: PartyRole): PartyDraft[] {
     return role === "vendedores" ? draft.vendedores : draft.compradores;
+  }
+
+  // Mantem dependencia explicita de draft no template para re-render imediato dos blocos PF/PJ.
+  function listByRoleForRender(currentDraft: ContractEditorDraft, role: PartyRole): PartyDraft[] {
+    return role === "vendedores" ? currentDraft.vendedores : currentDraft.compradores;
   }
 
   function patchParty(role: PartyRole, index: number, patch: Partial<PartyDraft>): void {
@@ -998,6 +1010,11 @@
     return readTextareaValue(event);
   }
 
+  function partyTypeValue(event: Event): string {
+    // Centraliza a leitura para cobrir target SELECT e OPTION com o valor mais recente.
+    return selectValue(event);
+  }
+
   function isKnownPropertyType(value: string): boolean {
     return PROPERTY_TYPE_OPTIONS.includes(value as (typeof PROPERTY_TYPE_OPTIONS)[number]);
   }
@@ -1153,15 +1170,18 @@
                   </button>
                 </div>
 
-                {#each listByRole(section.role) as party, index}
+                {#each listByRoleForRender(draft, section.role) as party, index}
                   <div class="party-card">
                     <div class="field">
                       <label for={`${section.idPrefix}_tipo_${index}`}>Tipo da parte</label>
                       <!-- Atualiza no input e no change para alternar PF/PJ sem atraso visual. -->
                       <select
                         id={`${section.idPrefix}_tipo_${index}`}
-                        bind:value={party.tipo}
-                        on:change={() => onPartyTipoChange(section.role, index, party.tipo)}
+                        value={selectedPartyTypeOption(party.tipo)}
+                        on:input={(event) =>
+                          onPartyTipoChange(section.role, index, partyTypeValue(event))}
+                        on:change={(event) =>
+                          onPartyTipoChange(section.role, index, partyTypeValue(event))}
                       >
                         <option value="">Selecione o tipo da parte</option>
                         {#each PARTY_TYPE_OPTIONS as option}
@@ -1497,7 +1517,7 @@
                     <div class="inline-actions">
                       <button
                         class="btn ghost btn-sm"
-                        disabled={listByRole(section.role).length === 1}
+                        disabled={listByRoleForRender(draft, section.role).length === 1}
                         on:click={() => removeParty(section.role, index)}
                       >
                         Remover
