@@ -10,6 +10,9 @@ API REST para autenticacao, contratos versionados, corretores e clausulas.
 
 Use `backend/.env.example` como referencia.
 
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`: habilitam envio de e-mail no fluxo de recuperacao.
+- `PASSWORD_RESET_URL`: URL base usada no e-mail para montar o link com `token`.
+
 ## Como rodar
 
 1. Instale Go 1.23+.
@@ -69,3 +72,4 @@ go test ./...
 
 - Migrations sao executadas automaticamente ao subir a API.
 - Em `APP_ENV=dev`, `forgot-password` retorna `dev_reset_token` no payload para facilitar testes.
+- Se SMTP estiver configurado, `forgot-password` envia token por e-mail; em caso de falha no envio, a API retorna erro.

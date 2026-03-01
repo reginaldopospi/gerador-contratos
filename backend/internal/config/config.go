@@ -16,6 +16,12 @@ type Config struct {
 	RefreshTokenTTL       time.Duration
 	PasswordResetTokenTTL time.Duration
 	AppEnv                string
+	SMTPHost              string
+	SMTPPort              int
+	SMTPUser              string
+	SMTPPass              string
+	SMTPFrom              string
+	PasswordResetURL      string
 }
 
 func Load() Config {
@@ -28,6 +34,12 @@ func Load() Config {
 		RefreshTokenTTL:       time.Duration(getEnvAsInt("REFRESH_TOKEN_HOURS", 24*7)) * time.Hour,
 		PasswordResetTokenTTL: time.Duration(getEnvAsInt("PASSWORD_RESET_MIN", 30)) * time.Minute,
 		AppEnv:                getEnv("APP_ENV", "dev"),
+		SMTPHost:              getEnv("SMTP_HOST", ""),
+		SMTPPort:              getEnvAsInt("SMTP_PORT", 587),
+		SMTPUser:              getEnv("SMTP_USER", ""),
+		SMTPPass:              getEnv("SMTP_PASS", ""),
+		SMTPFrom:              getEnv("SMTP_FROM", ""),
+		PasswordResetURL:      getEnv("PASSWORD_RESET_URL", ""),
 	}
 }
 

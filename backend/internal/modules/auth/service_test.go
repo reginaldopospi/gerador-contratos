@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -16,6 +17,13 @@ type fakeRepo struct {
 	resets   map[string]PasswordResetToken
 }
 
+type fakePasswordResetNotifier struct {
+	err            error
+	callCount      int
+	notification   PasswordResetNotification
+	lastContextErr error
+}
+
 func newFakeRepo() *fakeRepo {
 	return &fakeRepo{
 		tenants:  map[string]Tenant{},
@@ -24,6 +32,14 @@ func newFakeRepo() *fakeRepo {
 		sessions: map[string]Session{},
 		resets:   map[string]PasswordResetToken{},
 	}
+}
+
+// SendPasswordReset registra a notificacao para validacao dos testes.
+func (f *fakePasswordResetNotifier) SendPasswordReset(ctx context.Context, notification PasswordResetNotification) error {
+	f.callCount++
+	f.notification = notification
+	f.lastContextErr = ctx.Err()
+	return f.err
 }
 
 func (f *fakeRepo) CreateTenant(ctx context.Context, tenant Tenant) error {
@@ -226,5 +242,84 @@ func TestLoginWithPasswordContainingSpaces(t *testing.T) {
 	}, ClientMetadata{})
 	if err != nil {
 		t.Fatalf("login failed for password with spaces: %v", err)
+	}
+}
+
+func TestForgotPasswordSendsNotificationInProd(t *testing.T) {
+	repo := newFakeRepo()
+	notifier := &fakePasswordResetNotifier{}
+	svc := NewService(repo, ServiceConfig{
+		AccessTokenTTL:        15 * time.Minute,
+		RefreshTokenTTL:       7 * 24 * time.Hour,
+		PasswordResetTTL:      30 * time.Minute,
+		JWTSecret:             "test-secret",
+		AppEnv:                "prod",
+		PasswordResetNotifier: notifier,
+	})
+
+	_, err := svc.RegisterTenantAdmin(context.Background(), RegisterTenantAdminInput{
+		TenantName: "Imobiliaria Teste",
+		Name:       "Admin",
+		Email:      "admin@teste.com",
+		Password:   "senhaForte123",
+	}, ClientMetadata{})
+	if err != nil {
+		t.Fatalf("register failed: %v", err)
+	}
+
+	devToken, err := svc.ForgotPassword(context.Background(), ForgotPasswordInput{Email: "admin@teste.com"})
+	if err != nil {
+		t.Fatalf("forgot password failed: %v", err)
+	}
+	if devToken != "" {
+		t.Fatalf("expected empty dev token in prod mode")
+	}
+	if notifier.callCount != 1 {
+		t.Fatalf("expected notifier to be called once, got %d", notifier.callCount)
+	}
+	if notifier.notification.ToEmail != "admin@teste.com" {
+		t.Fatalf("unexpected notification email: %s", notifier.notification.ToEmail)
+	}
+	if notifier.notification.Token == "" {
+		t.Fatalf("expected notification token")
+	}
+}
+
+func TestForgotPasswordReturnsErrorWhenNotificationFails(t *testing.T) {
+	repo := newFakeRepo()
+	notifier := &fakePasswordResetNotifier{err: errors.New("smtp down")}
+	svc := NewService(repo, ServiceConfig{
+		AccessTokenTTL:        15 * time.Minute,
+		RefreshTokenTTL:       7 * 24 * time.Hour,
+		PasswordResetTTL:      30 * time.Minute,
+		JWTSecret:             "test-secret",
+		AppEnv:                "prod",
+		PasswordResetNotifier: notifier,
+	})
+
+	_, err := svc.RegisterTenantAdmin(context.Background(), RegisterTenantAdminInput{
+		TenantName: "Imobiliaria Teste",
+		Name:       "Admin",
+		Email:      "admin@teste.com",
+		Password:   "senhaForte123",
+	}, ClientMetadata{})
+	if err != nil {
+		t.Fatalf("register failed: %v", err)
+	}
+
+	_, err = svc.ForgotPassword(context.Background(), ForgotPasswordInput{Email: "admin@teste.com"})
+	if err == nil {
+		t.Fatalf("expected forgot password error")
+	}
+
+	appErr, ok := err.(*common.AppError)
+	if !ok {
+		t.Fatalf("expected app error, got %T", err)
+	}
+	if appErr.Code != "password_reset_notification_failed" {
+		t.Fatalf("unexpected error code: %s", appErr.Code)
+	}
+	if notifier.callCount != 1 {
+		t.Fatalf("expected notifier call, got %d", notifier.callCount)
 	}
 }

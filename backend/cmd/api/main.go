@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -23,6 +24,10 @@ import (
 
 func main() {
 	cfg := config.Load()
+	if strings.EqualFold(cfg.AppEnv, "prod") && !shouldConfigureSMTP(cfg) {
+		// Em producao, exige SMTP para que recuperacao de senha nao fique silenciosamente inoperante.
+		log.Fatal("smtp configuration is required when APP_ENV=prod")
+	}
 
 	sqlDB, err := db.OpenSQLite(cfg.DBPath)
 	if err != nil {
@@ -36,12 +41,30 @@ func main() {
 	}
 
 	authRepo := auth.NewSQLiteRepository(sqlDB)
+	passwordResetNotifier := auth.PasswordResetNotifier(auth.NoopPasswordResetNotifier{})
+	if shouldConfigureSMTP(cfg) {
+		// Configura o adapter SMTP apenas quando ha variaveis de envio informadas.
+		smtpNotifier, err := auth.NewSMTPPasswordResetNotifier(auth.SMTPPasswordResetNotifierConfig{
+			Host:             cfg.SMTPHost,
+			Port:             cfg.SMTPPort,
+			Username:         cfg.SMTPUser,
+			Password:         cfg.SMTPPass,
+			From:             cfg.SMTPFrom,
+			PasswordResetURL: cfg.PasswordResetURL,
+		})
+		if err != nil {
+			log.Fatalf("configure smtp notifier: %v", err)
+		}
+		passwordResetNotifier = smtpNotifier
+	}
+
 	authService := auth.NewService(authRepo, auth.ServiceConfig{
-		AccessTokenTTL:   cfg.AccessTokenTTL,
-		RefreshTokenTTL:  cfg.RefreshTokenTTL,
-		PasswordResetTTL: cfg.PasswordResetTokenTTL,
-		JWTSecret:        cfg.JWTSecret,
-		AppEnv:           cfg.AppEnv,
+		AccessTokenTTL:        cfg.AccessTokenTTL,
+		RefreshTokenTTL:       cfg.RefreshTokenTTL,
+		PasswordResetTTL:      cfg.PasswordResetTokenTTL,
+		JWTSecret:             cfg.JWTSecret,
+		AppEnv:                cfg.AppEnv,
+		PasswordResetNotifier: passwordResetNotifier,
 	})
 
 	rulesService := rules.NewService()
@@ -91,4 +114,12 @@ func main() {
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Printf("graceful shutdown error: %v", err)
 	}
+}
+
+// shouldConfigureSMTP detecta se houve tentativa de configurar envio SMTP.
+func shouldConfigureSMTP(cfg config.Config) bool {
+	return strings.TrimSpace(cfg.SMTPHost) != "" ||
+		strings.TrimSpace(cfg.SMTPFrom) != "" ||
+		strings.TrimSpace(cfg.SMTPUser) != "" ||
+		strings.TrimSpace(cfg.SMTPPass) != ""
 }

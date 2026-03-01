@@ -12,30 +12,39 @@ import (
 )
 
 type Service struct {
-	repo             Repository
-	tokens           *tokenManager
-	accessTokenTTL   time.Duration
-	refreshTokenTTL  time.Duration
-	passwordResetTTL time.Duration
-	appEnv           string
+	repo                  Repository
+	tokens                *tokenManager
+	accessTokenTTL        time.Duration
+	refreshTokenTTL       time.Duration
+	passwordResetTTL      time.Duration
+	appEnv                string
+	passwordResetNotifier PasswordResetNotifier
 }
 
 type ServiceConfig struct {
-	AccessTokenTTL   time.Duration
-	RefreshTokenTTL  time.Duration
-	PasswordResetTTL time.Duration
-	JWTSecret        string
-	AppEnv           string
+	AccessTokenTTL        time.Duration
+	RefreshTokenTTL       time.Duration
+	PasswordResetTTL      time.Duration
+	JWTSecret             string
+	AppEnv                string
+	PasswordResetNotifier PasswordResetNotifier
 }
 
 func NewService(repo Repository, cfg ServiceConfig) *Service {
+	notifier := cfg.PasswordResetNotifier
+	if notifier == nil {
+		// O notifier nulo evita quebrar o fluxo em ambientes sem SMTP configurado.
+		notifier = NoopPasswordResetNotifier{}
+	}
+
 	return &Service{
-		repo:             repo,
-		tokens:           newTokenManager(cfg.JWTSecret),
-		accessTokenTTL:   cfg.AccessTokenTTL,
-		refreshTokenTTL:  cfg.RefreshTokenTTL,
-		passwordResetTTL: cfg.PasswordResetTTL,
-		appEnv:           cfg.AppEnv,
+		repo:                  repo,
+		tokens:                newTokenManager(cfg.JWTSecret),
+		accessTokenTTL:        cfg.AccessTokenTTL,
+		refreshTokenTTL:       cfg.RefreshTokenTTL,
+		passwordResetTTL:      cfg.PasswordResetTTL,
+		appEnv:                cfg.AppEnv,
+		passwordResetNotifier: notifier,
 	}
 }
 
@@ -209,6 +218,15 @@ func (s *Service) ForgotPassword(ctx context.Context, in ForgotPasswordInput) (s
 	}
 	if err := s.repo.StorePasswordResetToken(ctx, entry); err != nil {
 		return "", err
+	}
+
+	notification := PasswordResetNotification{
+		ToEmail:   user.Email,
+		Token:     rawToken,
+		ExpiresAt: entry.ExpiresAt,
+	}
+	if err := s.passwordResetNotifier.SendPasswordReset(ctx, notification); err != nil {
+		return "", common.NewInternal("password_reset_notification_failed", "nao foi possivel enviar email de recuperacao")
 	}
 
 	if strings.EqualFold(s.appEnv, "dev") {
