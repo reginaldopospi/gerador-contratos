@@ -206,10 +206,12 @@
     "Parte Compradora/Cessionária",
     "Ambas as Partes"
   ] as const;
-  const commissionFields: Array<{ key: DraftStringField; label: string; placeholder: string }> = [
-    { key: "valorComissao", label: "Valor da comissao", placeholder: "Ex.: 6% ou R$ 18.000,00" },
-    { key: "momentoPagto", label: "Momento do pagamento", placeholder: "Ex.: Na assinatura" }
-  ];
+  // Mantem as opcoes de momento conforme o sistema original.
+  const COMMISSION_PAYMENT_MOMENT_OPTIONS = [
+    "NA ESCRITURA",
+    "NA ASSINATURA DO CONTRATO",
+    "NA LIBERACAO DE VALORES NA CONTA DO VENDEDOR"
+  ] as const;
 
   $: {
     const hydratedDraft = hydrateDraftClauseMetadata(draft, availableClauses);
@@ -865,6 +867,17 @@
   function selectedCommissionPayerOption(value: string): ((typeof COMMISSION_PAYER_OPTIONS)[number] | "") {
     const matched = COMMISSION_PAYER_OPTIONS.find((option) => option === value.trim());
     return matched ?? "";
+  }
+
+  function selectedCommissionPaymentMomentOption(
+    value: string
+  ): ((typeof COMMISSION_PAYMENT_MOMENT_OPTIONS)[number] | "") {
+    const matched = COMMISSION_PAYMENT_MOMENT_OPTIONS.find((option) => option === value.trim());
+    return matched ?? "";
+  }
+
+  function isKnownCommissionPaymentMoment(value: string): boolean {
+    return selectedCommissionPaymentMomentOption(value) !== "";
   }
 
   function onPartyTipoChange(role: PartyRole, index: number, value: string): void {
@@ -1938,23 +1951,75 @@
               </select>
             </div>
 
-            {#each commissionFields as field}
-              <div class="field">
-                <label for={`commission_${field.key}`}>{field.label}</label>
-                <input
-                  id={`commission_${field.key}`}
-                  value={draft[field.key]}
-                  placeholder={field.placeholder}
-                  on:input={(event) => updateField(field.key, inputValue(event))}
-                />
-              </div>
-            {/each}
+            <div class="field">
+              <label for="commission_valorComissao">Valor da comissao</label>
+              <input
+                id="commission_valorComissao"
+                value={draft.valorComissao}
+                placeholder="Ex.: 6% ou R$ 18.000,00"
+                on:input={(event) => updateField("valorComissao", inputValue(event))}
+              />
+            </div>
+
+            <div class="field">
+              <label for="commission_momentoPagto">Momento do pagamento</label>
+              <select
+                id="commission_momentoPagto"
+                value={selectedCommissionPaymentMomentOption(draft.momentoPagto)}
+                on:change={(event) => updateField("momentoPagto", selectValue(event))}
+              >
+                <option value="">Selecione o momento do pagamento</option>
+                <!-- Preserva valor legado caso venha diferente das opcoes atuais. -->
+                {#if draft.momentoPagto.trim() !== "" && !isKnownCommissionPaymentMoment(draft.momentoPagto)}
+                  <option value={draft.momentoPagto}>{draft.momentoPagto}</option>
+                {/if}
+                {#each COMMISSION_PAYMENT_MOMENT_OPTIONS as option}
+                  <option value={option}>{option}</option>
+                {/each}
+              </select>
+            </div>
           </div>
         </section>
+        <section class="editor-section">
+          <div class="editor-section-head">
+            <h3>Entrega de chaves</h3>
+            <p>Selecione uma regra padrao ou escreva o texto personalizado.</p>
+          </div>
+
+          <div class="grid cols-2">
+            <div class="field">
+              <label for="entrega_chaves">Regra principal</label>
+              <select
+                id="entrega_chaves"
+                value={draft.entregaChaves}
+                on:change={(event) => updateField("entregaChaves", selectValue(event))}
+              >
+                <option value="">Selecione uma opcao</option>
+                {#each DELIVERY_OPTIONS as option}
+                  <option value={option}>{option}</option>
+                {/each}
+              </select>
+            </div>
+          </div>
+
+          {#if draft.entregaChaves === "Escrever no contrato"}
+            <div class="field">
+              <label for="entrega_chaves_texto">Texto da clausula</label>
+              <textarea
+                id="entrega_chaves_texto"
+                value={draft.entregaChavesTexto}
+                placeholder="Descreva como e quando as chaves serao entregues."
+                on:input={(event) => updateField("entregaChavesTexto", textareaValue(event))}
+              ></textarea>
+            </div>
+          {/if}
+
+        </section>
+
 
         <section class="editor-section">
           <div class="editor-section-head">
-            <h3>Clausulas do contrato</h3>
+            <h3>Clausulas adicionais do contrato</h3>
             <p>Busque clausulas salvas e adicione em formato de tags.</p>
           </div>
 
@@ -2083,42 +2148,6 @@
               </div>
             {/if}
           </div>
-
-        </section>
-
-        <section class="editor-section">
-          <div class="editor-section-head">
-            <h3>Entrega de chaves</h3>
-            <p>Selecione uma regra padrao ou escreva o texto personalizado.</p>
-          </div>
-
-          <div class="grid cols-2">
-            <div class="field">
-              <label for="entrega_chaves">Regra principal</label>
-              <select
-                id="entrega_chaves"
-                value={draft.entregaChaves}
-                on:change={(event) => updateField("entregaChaves", selectValue(event))}
-              >
-                <option value="">Selecione uma opcao</option>
-                {#each DELIVERY_OPTIONS as option}
-                  <option value={option}>{option}</option>
-                {/each}
-              </select>
-            </div>
-          </div>
-
-          {#if draft.entregaChaves === "Escrever no contrato"}
-            <div class="field">
-              <label for="entrega_chaves_texto">Texto da clausula</label>
-              <textarea
-                id="entrega_chaves_texto"
-                value={draft.entregaChavesTexto}
-                placeholder="Descreva como e quando as chaves serao entregues."
-                on:input={(event) => updateField("entregaChavesTexto", textareaValue(event))}
-              ></textarea>
-            </div>
-          {/if}
 
         </section>
 

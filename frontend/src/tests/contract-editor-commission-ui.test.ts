@@ -22,7 +22,7 @@ vi.mock("../lib/utils/guards", () => ({
   requireAuth: requireAuthMock
 }));
 
-describe("ContractEditorPage commission payer field", () => {
+describe("ContractEditorPage commission fields", () => {
   beforeEach(() => {
     // Isola o teste de UI sem depender de chamadas reais.
     vi.clearAllMocks();
@@ -61,19 +61,31 @@ describe("ContractEditorPage commission payer field", () => {
     });
   });
 
-  it("deve usar select fixo para quem paga comissao", async () => {
+  it("deve usar selects fixos para quem paga e momento do pagamento", async () => {
     render(ContractEditorPage, { params: { id: "ct-1" } });
 
     const payerSelect = (await screen.findByRole("combobox", {
       name: "Quem paga comissao"
     })) as HTMLSelectElement;
+    const momentSelect = screen.getByRole("combobox", {
+      name: "Momento do pagamento"
+    }) as HTMLSelectElement;
 
     expect(screen.queryByRole("textbox", { name: "Quem paga comissao" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Momento do pagamento" })).not.toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Parte Vendedora/Cedente" })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "Parte Compradora/Cessionária" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /Parte Compradora/ })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Ambas as Partes" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "NA ESCRITURA" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "NA ASSINATURA DO CONTRATO" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "NA LIBERACAO DE VALORES NA CONTA DO VENDEDOR" })
+    ).toBeInTheDocument();
 
     await fireEvent.change(payerSelect, { target: { value: "Ambas as Partes" } });
     expect(payerSelect.value).toBe("Ambas as Partes");
+
+    await fireEvent.change(momentSelect, { target: { value: "NA ESCRITURA" } });
+    expect(momentSelect.value).toBe("NA ESCRITURA");
   });
 });

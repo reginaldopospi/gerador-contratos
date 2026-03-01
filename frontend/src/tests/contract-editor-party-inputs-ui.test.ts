@@ -84,7 +84,12 @@ describe("ContractEditorPage party input behavior", () => {
     // A secao de campos adicionais foi removida da interface.
     expect(screen.queryByText("Campos adicionais")).not.toBeInTheDocument();
     // A secao de clausulas personalizadas de entrega foi removida da interface.
-    await screen.findByRole("heading", { name: "Clausulas do contrato" });
+    const deliveryHeading = await screen.findByRole("heading", { name: "Entrega de chaves" });
+    const clausesHeading = screen.getByRole("heading", { name: "Clausulas adicionais do contrato" });
+    // Garante a nova ordem: entrega antes das clausulas adicionais.
+    expect(
+      deliveryHeading.compareDocumentPosition(clausesHeading) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
     expect(
       screen.queryByRole("heading", { name: "Clausulas personalizadas de entrega" })
     ).not.toBeInTheDocument();
