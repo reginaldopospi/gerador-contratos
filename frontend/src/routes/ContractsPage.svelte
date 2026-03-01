@@ -13,7 +13,6 @@
   let q = "";
   let numero = "";
   let tipo = "Compromisso de Venda e Compra de Imovel";
-  let status = "rascunho";
 
   async function load(): Promise<void> {
     loading = true;
@@ -34,7 +33,8 @@
       const details = await api.createContract({
         numero,
         tipo,
-        status,
+        // Mantem o contrato inicial em rascunho sem expor esse controle na UI.
+        status: "rascunho",
         data: {
           contrato__numero: numero,
           contrato__tipo: tipo
@@ -115,18 +115,10 @@
 
   <div class="panel">
     <h2>Novo contrato</h2>
-    <div class="grid cols-2">
+    <div class="grid">
       <div class="field">
         <label for="contract_numero">Numero</label>
         <input id="contract_numero" bind:value={numero} placeholder="Ex.: 1981" />
-      </div>
-      <div class="field">
-        <label for="contract_status">Status</label>
-        <select id="contract_status" bind:value={status}>
-          <option value="rascunho">Rascunho</option>
-          <option value="em_revisao">Em revisao</option>
-          <option value="aprovado">Aprovado</option>
-        </select>
       </div>
       <div class="field span-all">
         <label for="contract_tipo">Tipo</label>
