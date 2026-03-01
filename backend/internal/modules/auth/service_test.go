@@ -47,6 +47,43 @@ func (f *fakeRepo) CreateTenant(ctx context.Context, tenant Tenant) error {
 	return nil
 }
 
+func (f *fakeRepo) UpdateTenant(ctx context.Context, tenantID string, tenantName string, tenantCNPJ string) error {
+	tenant, ok := f.tenants[tenantID]
+	if !ok {
+		return common.NewNotFound("tenant_not_found", "not found")
+	}
+	tenant.NomeFantasia = tenantName
+	tenant.CNPJ = tenantCNPJ
+	f.tenants[tenantID] = tenant
+	return nil
+}
+
+func (f *fakeRepo) DeleteTenant(ctx context.Context, tenantID string) error {
+	if _, ok := f.tenants[tenantID]; !ok {
+		return common.NewNotFound("tenant_not_found", "not found")
+	}
+	delete(f.tenants, tenantID)
+
+	// Simula o comportamento de cascata do SQLite para users/sessions/tokens.
+	for userID, user := range f.users {
+		if user.TenantID != tenantID {
+			continue
+		}
+		delete(f.emailIx, user.Email)
+		delete(f.users, userID)
+	}
+	return nil
+}
+
+func (f *fakeRepo) GetTenantByID(ctx context.Context, tenantID string) (*Tenant, error) {
+	tenant, ok := f.tenants[tenantID]
+	if !ok {
+		return nil, common.NewNotFound("tenant_not_found", "not found")
+	}
+	copy := tenant
+	return &copy, nil
+}
+
 func (f *fakeRepo) CreateUser(ctx context.Context, user User) error {
 	if _, ok := f.emailIx[user.Email]; ok {
 		return common.NewConflict("email_exists", "email ja cadastrado")
@@ -71,6 +108,16 @@ func (f *fakeRepo) GetUserByID(ctx context.Context, id string) (*User, error) {
 		return nil, common.NewNotFound("user_not_found", "not found")
 	}
 	return &u, nil
+}
+
+func (f *fakeRepo) GetPrimaryTenantAdmin(ctx context.Context, tenantID string) (*User, error) {
+	for _, user := range f.users {
+		if user.TenantID == tenantID && user.Role == RoleAdmin {
+			copy := user
+			return &copy, nil
+		}
+	}
+	return nil, common.NewNotFound("tenant_admin_not_found", "not found")
 }
 
 func (f *fakeRepo) ListTenants(ctx context.Context) ([]TenantSummary, error) {
@@ -606,5 +653,265 @@ func TestNonPlatformAdminCannotListTenants(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatalf("expected forbidden error")
+	}
+}
+
+func TestPlatformAdminCanUpdateTenant(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, ServiceConfig{
+		AccessTokenTTL:       15 * time.Minute,
+		RefreshTokenTTL:      7 * 24 * time.Hour,
+		PasswordResetTTL:     30 * time.Minute,
+		JWTSecret:            "test-secret",
+		AppEnv:               "dev",
+		PlatformAdminEmail:   "admin@plataforma.local",
+		RegistrationApproval: true,
+	})
+
+	if err := svc.BootstrapPlatformAdmin(context.Background(), PlatformAdminBootstrapInput{
+		TenantName: "Plataforma",
+		Name:       "Administrador da Plataforma",
+		Email:      "admin@plataforma.local",
+		Password:   "Admin12345",
+	}); err != nil {
+		t.Fatalf("bootstrap platform admin failed: %v", err)
+	}
+
+	registerResult, err := svc.RegisterTenantAdmin(context.Background(), RegisterTenantAdminInput{
+		TenantName: "Imobiliaria Editar",
+		TenantCNPJ: "11.111.111/0001-11",
+		Name:       "Admin Imob",
+		Email:      "admin@editar.com",
+		Password:   "senhaInicial123",
+	}, ClientMetadata{})
+	if err != nil {
+		t.Fatalf("register tenant admin failed: %v", err)
+	}
+
+	updatedTenant, err := svc.UpdateTenant(context.Background(), AuthClaims{
+		Role:  RoleAdmin,
+		Email: "admin@plataforma.local",
+	}, UpdateTenantInput{
+		TenantID:   registerResult.User.TenantID,
+		TenantName: "Imobiliaria Editada",
+		TenantCNPJ: "22.222.222/0001-22",
+	})
+	if err != nil {
+		t.Fatalf("update tenant failed: %v", err)
+	}
+	if updatedTenant.NomeFantasia != "Imobiliaria Editada" {
+		t.Fatalf("unexpected tenant name: %s", updatedTenant.NomeFantasia)
+	}
+	if updatedTenant.CNPJ != "22.222.222/0001-22" {
+		t.Fatalf("unexpected tenant cnpj: %s", updatedTenant.CNPJ)
+	}
+}
+
+func TestNonPlatformAdminCannotUpdateTenant(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, ServiceConfig{
+		AccessTokenTTL:       15 * time.Minute,
+		RefreshTokenTTL:      7 * 24 * time.Hour,
+		PasswordResetTTL:     30 * time.Minute,
+		JWTSecret:            "test-secret",
+		AppEnv:               "dev",
+		PlatformAdminEmail:   "admin@plataforma.local",
+		RegistrationApproval: true,
+	})
+
+	_, err := svc.UpdateTenant(context.Background(), AuthClaims{
+		Role:  RoleAdmin,
+		Email: "admin@tenant.com",
+	}, UpdateTenantInput{
+		TenantID:   "tenant-x",
+		TenantName: "Nome",
+	})
+	if err == nil {
+		t.Fatalf("expected forbidden error")
+	}
+}
+
+func TestPlatformAdminCanDeleteTenant(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, ServiceConfig{
+		AccessTokenTTL:       15 * time.Minute,
+		RefreshTokenTTL:      7 * 24 * time.Hour,
+		PasswordResetTTL:     30 * time.Minute,
+		JWTSecret:            "test-secret",
+		AppEnv:               "dev",
+		PlatformAdminEmail:   "admin@plataforma.local",
+		RegistrationApproval: true,
+	})
+
+	if err := svc.BootstrapPlatformAdmin(context.Background(), PlatformAdminBootstrapInput{
+		TenantName: "Plataforma",
+		Name:       "Administrador da Plataforma",
+		Email:      "admin@plataforma.local",
+		Password:   "Admin12345",
+	}); err != nil {
+		t.Fatalf("bootstrap platform admin failed: %v", err)
+	}
+
+	registerResult, err := svc.RegisterTenantAdmin(context.Background(), RegisterTenantAdminInput{
+		TenantName: "Imobiliaria Excluir",
+		Name:       "Admin Excluir",
+		Email:      "admin@excluir.com",
+		Password:   "senhaInicial123",
+	}, ClientMetadata{})
+	if err != nil {
+		t.Fatalf("register tenant admin failed: %v", err)
+	}
+
+	if err := svc.DeleteTenant(context.Background(), AuthClaims{
+		Role:  RoleAdmin,
+		Email: "admin@plataforma.local",
+	}, registerResult.User.TenantID); err != nil {
+		t.Fatalf("delete tenant failed: %v", err)
+	}
+
+	if _, err := repo.GetTenantByID(context.Background(), registerResult.User.TenantID); err == nil {
+		t.Fatalf("expected tenant to be deleted")
+	}
+}
+
+func TestPlatformAdminCannotDeletePlatformTenant(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, ServiceConfig{
+		AccessTokenTTL:       15 * time.Minute,
+		RefreshTokenTTL:      7 * 24 * time.Hour,
+		PasswordResetTTL:     30 * time.Minute,
+		JWTSecret:            "test-secret",
+		AppEnv:               "dev",
+		PlatformAdminEmail:   "admin@plataforma.local",
+		RegistrationApproval: true,
+	})
+
+	if err := svc.BootstrapPlatformAdmin(context.Background(), PlatformAdminBootstrapInput{
+		TenantName: "Plataforma",
+		Name:       "Administrador da Plataforma",
+		Email:      "admin@plataforma.local",
+		Password:   "Admin12345",
+	}); err != nil {
+		t.Fatalf("bootstrap platform admin failed: %v", err)
+	}
+
+	platformUser, err := repo.GetUserByEmail(context.Background(), "admin@plataforma.local")
+	if err != nil {
+		t.Fatalf("get platform admin failed: %v", err)
+	}
+
+	err = svc.DeleteTenant(context.Background(), AuthClaims{
+		Role:  RoleAdmin,
+		Email: "admin@plataforma.local",
+	}, platformUser.TenantID)
+	if err == nil {
+		t.Fatalf("expected protected platform tenant error")
+	}
+}
+
+func TestPlatformAdminCanResetTenantAdminPassword(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, ServiceConfig{
+		AccessTokenTTL:       15 * time.Minute,
+		RefreshTokenTTL:      7 * 24 * time.Hour,
+		PasswordResetTTL:     30 * time.Minute,
+		JWTSecret:            "test-secret",
+		AppEnv:               "dev",
+		PlatformAdminEmail:   "admin@plataforma.local",
+		RegistrationApproval: false,
+	})
+
+	if err := svc.BootstrapPlatformAdmin(context.Background(), PlatformAdminBootstrapInput{
+		TenantName: "Plataforma",
+		Name:       "Administrador da Plataforma",
+		Email:      "admin@plataforma.local",
+		Password:   "Admin12345",
+	}); err != nil {
+		t.Fatalf("bootstrap platform admin failed: %v", err)
+	}
+
+	registerResult, err := svc.RegisterTenantAdmin(context.Background(), RegisterTenantAdminInput{
+		TenantName: "Imobiliaria Senha",
+		Name:       "Admin Senha",
+		Email:      "admin@senha.com",
+		Password:   "senhaInicial123",
+	}, ClientMetadata{})
+	if err != nil {
+		t.Fatalf("register tenant admin failed: %v", err)
+	}
+
+	if _, err := svc.ResetTenantAdminPassword(context.Background(), AuthClaims{
+		Role:  RoleAdmin,
+		Email: "admin@plataforma.local",
+	}, ResetTenantAdminPasswordInput{
+		TenantID:    registerResult.User.TenantID,
+		NewPassword: "NovaSenha12345",
+	}); err != nil {
+		t.Fatalf("reset tenant admin password failed: %v", err)
+	}
+
+	if _, err := svc.Login(context.Background(), LoginInput{
+		Email:    "admin@senha.com",
+		Password: "NovaSenha12345",
+	}, ClientMetadata{}); err != nil {
+		t.Fatalf("login with reset password failed: %v", err)
+	}
+}
+
+func TestNonPlatformAdminCannotResetTenantAdminPassword(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, ServiceConfig{
+		AccessTokenTTL:       15 * time.Minute,
+		RefreshTokenTTL:      7 * 24 * time.Hour,
+		PasswordResetTTL:     30 * time.Minute,
+		JWTSecret:            "test-secret",
+		AppEnv:               "dev",
+		PlatformAdminEmail:   "admin@plataforma.local",
+		RegistrationApproval: true,
+	})
+
+	_, err := svc.ResetTenantAdminPassword(context.Background(), AuthClaims{
+		Role:  RoleAdmin,
+		Email: "admin@tenant.com",
+	}, ResetTenantAdminPasswordInput{
+		TenantID:    "tenant-x",
+		NewPassword: "NovaSenha12345",
+	})
+	if err == nil {
+		t.Fatalf("expected forbidden error")
+	}
+}
+
+func TestRegisterTenantAdminRollsBackTenantOnUserCreationConflict(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, ServiceConfig{
+		AccessTokenTTL:   15 * time.Minute,
+		RefreshTokenTTL:  7 * 24 * time.Hour,
+		PasswordResetTTL: 30 * time.Minute,
+		JWTSecret:        "test-secret",
+		AppEnv:           "dev",
+	})
+
+	if _, err := svc.RegisterTenantAdmin(context.Background(), RegisterTenantAdminInput{
+		TenantName: "Imobiliaria Base",
+		Name:       "Admin Base",
+		Email:      "admin@base.com",
+		Password:   "SenhaBase123",
+	}, ClientMetadata{}); err != nil {
+		t.Fatalf("first register failed: %v", err)
+	}
+
+	if _, err := svc.RegisterTenantAdmin(context.Background(), RegisterTenantAdminInput{
+		TenantName: "Imobiliaria Orfa",
+		Name:       "Admin Orfa",
+		Email:      "admin@base.com",
+		Password:   "SenhaOrfa123",
+	}, ClientMetadata{}); err == nil {
+		t.Fatalf("expected conflict on duplicated email")
+	}
+
+	// O rollback do tenant evita registros duplicados sem usuario administrador associado.
+	if len(repo.tenants) != 1 {
+		t.Fatalf("expected single tenant after rollback, got %d", len(repo.tenants))
 	}
 }

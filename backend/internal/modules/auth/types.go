@@ -90,9 +90,23 @@ type TenantSummary struct {
 	TenantName  string    `json:"tenant_name"`
 	TenantCNPJ  string    `json:"tenant_cnpj,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
+	AdminUserID string    `json:"admin_user_id,omitempty"`
 	AdminEmail  string    `json:"admin_email,omitempty"`
 	TotalUsers  int       `json:"total_users"`
 	ActiveUsers int       `json:"active_users"`
+}
+
+// UpdateTenantInput permite editar dados cadastrais da imobiliaria no painel administrativo.
+type UpdateTenantInput struct {
+	TenantID   string
+	TenantName string `json:"tenant_name"`
+	TenantCNPJ string `json:"tenant_cnpj"`
+}
+
+// ResetTenantAdminPasswordInput redefine a senha do admin principal da imobiliaria.
+type ResetTenantAdminPasswordInput struct {
+	TenantID    string
+	NewPassword string `json:"new_password"`
 }
 
 // ApproveRegistrationInput permite aprovar e opcionalmente redefinir a senha do cadastro.

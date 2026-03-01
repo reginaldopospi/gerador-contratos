@@ -121,6 +121,9 @@ func TestListTenantsReturnsSummaryWithUserCounters(t *testing.T) {
 	if items[0].AdminEmail != "admin-b@imob.com" {
 		t.Fatalf("unexpected admin email for tenant-2: %s", items[0].AdminEmail)
 	}
+	if items[0].AdminUserID != "user-3" {
+		t.Fatalf("unexpected admin user id for tenant-2: %s", items[0].AdminUserID)
+	}
 	if items[0].TotalUsers != 1 || items[0].ActiveUsers != 1 {
 		t.Fatalf("unexpected counters for tenant-2: total=%d active=%d", items[0].TotalUsers, items[0].ActiveUsers)
 	}
@@ -128,7 +131,79 @@ func TestListTenantsReturnsSummaryWithUserCounters(t *testing.T) {
 	if items[1].AdminEmail != "admin-a@imob.com" {
 		t.Fatalf("unexpected admin email for tenant-1: %s", items[1].AdminEmail)
 	}
+	if items[1].AdminUserID != "user-1" {
+		t.Fatalf("unexpected admin user id for tenant-1: %s", items[1].AdminUserID)
+	}
 	if items[1].TotalUsers != 2 || items[1].ActiveUsers != 1 {
 		t.Fatalf("unexpected counters for tenant-1: total=%d active=%d", items[1].TotalUsers, items[1].ActiveUsers)
+	}
+}
+
+func TestUpdateGetAndDeleteTenantLifecycle(t *testing.T) {
+	db := newSQLiteRepositoryTestDB(t)
+	repo := NewSQLiteRepository(db)
+
+	ctx := context.Background()
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO tenants (id, nome_fantasia, cnpj)
+		VALUES ('tenant-1', 'Imobiliaria Inicial', '11.111.111/0001-11')
+	`); err != nil {
+		t.Fatalf("insert tenant: %v", err)
+	}
+
+	if err := repo.UpdateTenant(ctx, "tenant-1", "Imobiliaria Atualizada", "22.222.222/0001-22"); err != nil {
+		t.Fatalf("update tenant: %v", err)
+	}
+
+	tenant, err := repo.GetTenantByID(ctx, "tenant-1")
+	if err != nil {
+		t.Fatalf("get tenant by id: %v", err)
+	}
+	if tenant.NomeFantasia != "Imobiliaria Atualizada" {
+		t.Fatalf("unexpected tenant name: %s", tenant.NomeFantasia)
+	}
+	if tenant.CNPJ != "22.222.222/0001-22" {
+		t.Fatalf("unexpected tenant cnpj: %s", tenant.CNPJ)
+	}
+
+	if err := repo.DeleteTenant(ctx, "tenant-1"); err != nil {
+		t.Fatalf("delete tenant: %v", err)
+	}
+	if _, err := repo.GetTenantByID(ctx, "tenant-1"); err == nil {
+		t.Fatalf("expected tenant not found after delete")
+	}
+}
+
+func TestGetPrimaryTenantAdminReturnsEarliestAdmin(t *testing.T) {
+	db := newSQLiteRepositoryTestDB(t)
+	repo := NewSQLiteRepository(db)
+
+	ctx := context.Background()
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO tenants (id, nome_fantasia, cnpj)
+		VALUES ('tenant-1', 'Imobiliaria Admin', '33.333.333/0001-33')
+	`); err != nil {
+		t.Fatalf("insert tenant: %v", err)
+	}
+
+	// A ordenacao por created_at garante escolha consistente do admin principal.
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO users (id, tenant_id, name, email, password_hash, role, is_active, created_at, updated_at)
+		VALUES
+			('user-admin-old', 'tenant-1', 'Admin Antigo', 'old@imob.com', 'hash', 'admin', 1, '2026-01-01 09:00:00', '2026-01-01 09:00:00'),
+			('user-admin-new', 'tenant-1', 'Admin Novo', 'new@imob.com', 'hash', 'admin', 1, '2026-01-02 09:00:00', '2026-01-02 09:00:00')
+	`); err != nil {
+		t.Fatalf("insert users: %v", err)
+	}
+
+	adminUser, err := repo.GetPrimaryTenantAdmin(ctx, "tenant-1")
+	if err != nil {
+		t.Fatalf("get primary tenant admin: %v", err)
+	}
+	if adminUser.ID != "user-admin-old" {
+		t.Fatalf("unexpected admin user: %s", adminUser.ID)
+	}
+	if adminUser.Email != "old@imob.com" {
+		t.Fatalf("unexpected admin email: %s", adminUser.Email)
 	}
 }

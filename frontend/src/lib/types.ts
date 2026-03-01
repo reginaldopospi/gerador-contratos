@@ -41,6 +41,7 @@ export interface TenantSummary {
   tenant_name: string;
   tenant_cnpj?: string;
   created_at: string;
+  admin_user_id?: string;
   admin_email?: string;
   total_users: number;
   active_users: number;

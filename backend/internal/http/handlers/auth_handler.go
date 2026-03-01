@@ -31,6 +31,9 @@ func (h *AuthHandler) RegisterRoutes(r chi.Router, requireAuth func(http.Handler
 		sr.Get("/me", h.me)
 		sr.Post("/users", h.registerUser)
 		sr.Get("/tenants", h.listTenants)
+		sr.Put("/tenants/{tenantID}", h.updateTenant)
+		sr.Delete("/tenants/{tenantID}", h.deleteTenant)
+		sr.Post("/tenants/{tenantID}/admin-password", h.resetTenantAdminPassword)
 		sr.Get("/pending-registrations", h.listPendingRegistrations)
 		sr.Post("/pending-registrations/{userID}/approve", h.approvePendingRegistration)
 	})
@@ -181,6 +184,83 @@ func (h *AuthHandler) listTenants(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *AuthHandler) updateTenant(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		httpx.WriteError(w, common.NewUnauthorized("invalid_token", "token invalido"))
+		return
+	}
+
+	var body struct {
+		TenantName string `json:"tenant_name"`
+		TenantCNPJ string `json:"tenant_cnpj"`
+	}
+	if err := httpx.DecodeJSON(r, &body); err != nil {
+		httpx.WriteError(w, common.NewBadRequest("invalid_payload", "payload invalido"))
+		return
+	}
+
+	tenantID := chi.URLParam(r, "tenantID")
+	tenant, err := h.service.UpdateTenant(r.Context(), claims, auth.UpdateTenantInput{
+		TenantID:   tenantID,
+		TenantName: body.TenantName,
+		TenantCNPJ: body.TenantCNPJ,
+	})
+	if err != nil {
+		httpx.WriteError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"tenant": tenant, "message": "imobiliaria atualizada com sucesso"})
+}
+
+func (h *AuthHandler) deleteTenant(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		httpx.WriteError(w, common.NewUnauthorized("invalid_token", "token invalido"))
+		return
+	}
+
+	tenantID := chi.URLParam(r, "tenantID")
+	if err := h.service.DeleteTenant(r.Context(), claims, tenantID); err != nil {
+		httpx.WriteError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"message": "imobiliaria excluida com sucesso"})
+}
+
+func (h *AuthHandler) resetTenantAdminPassword(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.GetClaims(r.Context())
+	if !ok {
+		httpx.WriteError(w, common.NewUnauthorized("invalid_token", "token invalido"))
+		return
+	}
+
+	var body struct {
+		NewPassword string `json:"new_password"`
+	}
+	if err := httpx.DecodeJSON(r, &body); err != nil {
+		httpx.WriteError(w, common.NewBadRequest("invalid_payload", "payload invalido"))
+		return
+	}
+
+	tenantID := chi.URLParam(r, "tenantID")
+	adminUser, err := h.service.ResetTenantAdminPassword(r.Context(), claims, auth.ResetTenantAdminPasswordInput{
+		TenantID:    tenantID,
+		NewPassword: body.NewPassword,
+	})
+	if err != nil {
+		httpx.WriteError(w, err)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"user":    adminUser,
+		"message": "senha do administrador redefinida com sucesso",
+	})
 }
 
 func (h *AuthHandler) listPendingRegistrations(w http.ResponseWriter, r *http.Request) {

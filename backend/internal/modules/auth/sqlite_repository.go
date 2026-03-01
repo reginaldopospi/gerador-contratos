@@ -29,6 +29,57 @@ func (r *SQLiteRepository) CreateTenant(ctx context.Context, tenant Tenant) erro
 	return nil
 }
 
+func (r *SQLiteRepository) UpdateTenant(ctx context.Context, tenantID string, tenantName string, tenantCNPJ string) error {
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE tenants
+		SET nome_fantasia = ?, cnpj = ?
+		WHERE id = ?
+	`, tenantName, nullIfEmpty(tenantCNPJ), tenantID)
+	if err != nil {
+		return fmt.Errorf("update tenant: %w", err)
+	}
+
+	affected, err := result.RowsAffected()
+	if err == nil && affected == 0 {
+		return common.NewNotFound("tenant_not_found", "imobiliaria nao encontrada")
+	}
+	return nil
+}
+
+func (r *SQLiteRepository) DeleteTenant(ctx context.Context, tenantID string) error {
+	result, err := r.db.ExecContext(ctx, `
+		DELETE FROM tenants
+		WHERE id = ?
+	`, tenantID)
+	if err != nil {
+		return fmt.Errorf("delete tenant: %w", err)
+	}
+
+	affected, err := result.RowsAffected()
+	if err == nil && affected == 0 {
+		return common.NewNotFound("tenant_not_found", "imobiliaria nao encontrada")
+	}
+	return nil
+}
+
+func (r *SQLiteRepository) GetTenantByID(ctx context.Context, tenantID string) (*Tenant, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id, nome_fantasia, COALESCE(cnpj, ''), created_at
+		FROM tenants
+		WHERE id = ?
+	`, tenantID)
+
+	var tenant Tenant
+	if err := row.Scan(&tenant.ID, &tenant.NomeFantasia, &tenant.CNPJ, &tenant.CreatedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, common.NewNotFound("tenant_not_found", "imobiliaria nao encontrada")
+		}
+		return nil, fmt.Errorf("get tenant by id: %w", err)
+	}
+
+	return &tenant, nil
+}
+
 func (r *SQLiteRepository) CreateUser(ctx context.Context, user User) error {
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO users (id, tenant_id, name, email, password_hash, role, is_active)
@@ -108,6 +159,40 @@ func (r *SQLiteRepository) GetUserByID(ctx context.Context, id string) (*User, e
 	return &user, nil
 }
 
+func (r *SQLiteRepository) GetPrimaryTenantAdmin(ctx context.Context, tenantID string) (*User, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id, tenant_id, name, email, password_hash, role, is_active, created_at, updated_at
+		FROM users
+		WHERE tenant_id = ? AND role = ?
+		ORDER BY created_at ASC
+		LIMIT 1
+	`, tenantID, string(RoleAdmin))
+
+	var user User
+	var role string
+	var isActive int
+	if err := row.Scan(
+		&user.ID,
+		&user.TenantID,
+		&user.Name,
+		&user.Email,
+		&user.PasswordHash,
+		&role,
+		&isActive,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, common.NewNotFound("tenant_admin_not_found", "administrador da imobiliaria nao encontrado")
+		}
+		return nil, fmt.Errorf("get primary tenant admin: %w", err)
+	}
+
+	user.Role = Role(role)
+	user.IsActive = isActive == 1
+	return &user, nil
+}
+
 // ListTenants lista as imobiliarias com metadados para administracao da plataforma.
 func (r *SQLiteRepository) ListTenants(ctx context.Context) ([]TenantSummary, error) {
 	rows, err := r.db.QueryContext(ctx, `
@@ -116,7 +201,20 @@ func (r *SQLiteRepository) ListTenants(ctx context.Context) ([]TenantSummary, er
 			t.nome_fantasia,
 			COALESCE(t.cnpj, ''),
 			t.created_at,
-			COALESCE(MIN(CASE WHEN u.role = 'admin' THEN u.email END), ''),
+			COALESCE((
+				SELECT ua.id
+				FROM users ua
+				WHERE ua.tenant_id = t.id AND ua.role = 'admin'
+				ORDER BY ua.created_at ASC
+				LIMIT 1
+			), ''),
+			COALESCE((
+				SELECT ua.email
+				FROM users ua
+				WHERE ua.tenant_id = t.id AND ua.role = 'admin'
+				ORDER BY ua.created_at ASC
+				LIMIT 1
+			), ''),
 			COUNT(u.id),
 			SUM(CASE WHEN u.is_active = 1 THEN 1 ELSE 0 END)
 		FROM tenants t
@@ -138,6 +236,7 @@ func (r *SQLiteRepository) ListTenants(ctx context.Context) ([]TenantSummary, er
 			&item.TenantName,
 			&item.TenantCNPJ,
 			&item.CreatedAt,
+			&item.AdminUserID,
 			&item.AdminEmail,
 			&item.TotalUsers,
 			&activeUsers,

@@ -105,6 +105,8 @@ func (s *Service) RegisterTenantAdmin(ctx context.Context, in RegisterTenantAdmi
 		IsActive: !s.registrationApproval,
 	}
 	if err := s.repo.CreateUser(ctx, user); err != nil {
+		// Evita tenant orfao quando a criacao do usuario falha por email duplicado ou validacao.
+		_ = s.repo.DeleteTenant(ctx, tenant.ID)
 		return nil, err
 	}
 
@@ -339,6 +341,93 @@ func (s *Service) ListTenants(ctx context.Context, actor AuthClaims) ([]TenantSu
 	return s.repo.ListTenants(ctx)
 }
 
+// UpdateTenant permite ao admin da plataforma editar dados de uma imobiliaria.
+func (s *Service) UpdateTenant(ctx context.Context, actor AuthClaims, in UpdateTenantInput) (*Tenant, error) {
+	if !s.IsPlatformAdmin(actor) {
+		return nil, common.NewForbidden("insufficient_permissions", "somente admin da plataforma pode editar imobiliarias")
+	}
+
+	in.TenantID = strings.TrimSpace(in.TenantID)
+	in.TenantName = strings.TrimSpace(in.TenantName)
+	in.TenantCNPJ = strings.TrimSpace(in.TenantCNPJ)
+
+	if in.TenantID == "" {
+		return nil, common.NewBadRequest("invalid_tenant_id", "id da imobiliaria e obrigatorio")
+	}
+	if in.TenantName == "" {
+		return nil, common.NewBadRequest("invalid_tenant_name", "nome da imobiliaria e obrigatorio")
+	}
+
+	if err := s.repo.UpdateTenant(ctx, in.TenantID, in.TenantName, in.TenantCNPJ); err != nil {
+		return nil, err
+	}
+	tenant, err := s.repo.GetTenantByID(ctx, in.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	return tenant, nil
+}
+
+// DeleteTenant remove uma imobiliaria e todos os registros dependentes via cascata de FK.
+func (s *Service) DeleteTenant(ctx context.Context, actor AuthClaims, tenantID string) error {
+	if !s.IsPlatformAdmin(actor) {
+		return common.NewForbidden("insufficient_permissions", "somente admin da plataforma pode excluir imobiliarias")
+	}
+
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return common.NewBadRequest("invalid_tenant_id", "id da imobiliaria e obrigatorio")
+	}
+
+	platformTenantID, err := s.getPlatformAdminTenantID(ctx)
+	if err != nil {
+		return err
+	}
+	if platformTenantID != "" && platformTenantID == tenantID {
+		return common.NewConflict("platform_tenant_protected", "nao e permitido excluir a imobiliaria da plataforma")
+	}
+
+	return s.repo.DeleteTenant(ctx, tenantID)
+}
+
+// ResetTenantAdminPassword redefine a senha do admin principal da imobiliaria.
+func (s *Service) ResetTenantAdminPassword(ctx context.Context, actor AuthClaims, in ResetTenantAdminPasswordInput) (*User, error) {
+	if !s.IsPlatformAdmin(actor) {
+		return nil, common.NewForbidden("insufficient_permissions", "somente admin da plataforma pode redefinir senha de imobiliaria")
+	}
+
+	in.TenantID = strings.TrimSpace(in.TenantID)
+	if in.TenantID == "" {
+		return nil, common.NewBadRequest("invalid_tenant_id", "id da imobiliaria e obrigatorio")
+	}
+	if err := validatePassword(in.NewPassword); err != nil {
+		return nil, err
+	}
+
+	if _, err := s.repo.GetTenantByID(ctx, in.TenantID); err != nil {
+		return nil, err
+	}
+
+	adminUser, err := s.repo.GetPrimaryTenantAdmin(ctx, in.TenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	hash, err := hashPassword(in.NewPassword)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repo.UpdateUserPassword(ctx, adminUser.ID, hash); err != nil {
+		return nil, err
+	}
+	if err := s.repo.RevokeAllUserSessions(ctx, adminUser.ID); err != nil {
+		return nil, err
+	}
+
+	adminUser.PasswordHash = ""
+	return adminUser, nil
+}
+
 // ApprovePendingRegistration ativa o cadastro e permite redefinir senha no momento da aprovacao.
 func (s *Service) ApprovePendingRegistration(ctx context.Context, actor AuthClaims, in ApproveRegistrationInput) (*User, error) {
 	if !s.IsPlatformAdmin(actor) {
@@ -459,6 +548,21 @@ func (s *Service) ValidateAccessToken(token string) (*AuthClaims, error) {
 		Role:     Role(claims.Role),
 		Email:    claims.Email,
 	}, nil
+}
+
+func (s *Service) getPlatformAdminTenantID(ctx context.Context) (string, error) {
+	if s.platformAdminEmail == "" {
+		return "", nil
+	}
+
+	platformUser, err := s.repo.GetUserByEmail(ctx, s.platformAdminEmail)
+	if err != nil {
+		if isUserNotFoundError(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	return strings.TrimSpace(platformUser.TenantID), nil
 }
 
 func (s *Service) newAuthResult(ctx context.Context, user User, metadata ClientMetadata) (*AuthResult, error) {

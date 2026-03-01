@@ -160,6 +160,41 @@ export const api = {
     return response.items;
   },
 
+  async updateTenant(
+    tenantID: string,
+    input: { tenant_name: string; tenant_cnpj?: string }
+  ): Promise<{ tenant: { id: string; nome_fantasia: string; cnpj?: string }; message: string }> {
+    // Permite ajustar os dados cadastrais da imobiliaria pelo painel de plataforma.
+    return request<{ tenant: { id: string; nome_fantasia: string; cnpj?: string }; message: string }>(
+      `/auth/tenants/${encodeURIComponent(tenantID)}`,
+      {
+        method: "PUT",
+        body: input
+      }
+    );
+  },
+
+  async deleteTenant(tenantID: string): Promise<{ message: string }> {
+    // Remove a imobiliaria e seus registros associados via backend.
+    return request<{ message: string }>(`/auth/tenants/${encodeURIComponent(tenantID)}`, {
+      method: "DELETE"
+    });
+  },
+
+  async resetTenantAdminPassword(
+    tenantID: string,
+    newPassword: string
+  ): Promise<{ message: string }> {
+    // Redefine a senha do admin principal da imobiliaria selecionada.
+    return request<{ message: string }>(
+      `/auth/tenants/${encodeURIComponent(tenantID)}/admin-password`,
+      {
+        method: "POST",
+        body: { new_password: newPassword }
+      }
+    );
+  },
+
   async approvePendingRegistration(userID: string, newPassword = ""): Promise<{ user: AuthResponse["user"]; message: string }> {
     // Permite ao admin da plataforma definir senha no momento da aprovacao.
     return request<{ user: AuthResponse["user"]; message: string }>(

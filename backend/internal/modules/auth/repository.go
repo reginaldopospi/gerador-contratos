@@ -4,9 +4,13 @@ import "context"
 
 type Repository interface {
 	CreateTenant(ctx context.Context, tenant Tenant) error
+	UpdateTenant(ctx context.Context, tenantID string, tenantName string, tenantCNPJ string) error
+	DeleteTenant(ctx context.Context, tenantID string) error
+	GetTenantByID(ctx context.Context, tenantID string) (*Tenant, error)
 	CreateUser(ctx context.Context, user User) error
 	GetUserByEmail(ctx context.Context, email string) (*User, error)
 	GetUserByID(ctx context.Context, id string) (*User, error)
+	GetPrimaryTenantAdmin(ctx context.Context, tenantID string) (*User, error)
 	ListTenants(ctx context.Context) ([]TenantSummary, error)
 	ListPendingTenantAdmins(ctx context.Context) ([]PendingRegistration, error)
 	UpdateUserPassword(ctx context.Context, userID string, passwordHash string) error

@@ -10,9 +10,16 @@
 
   let loading = true;
   let savingUserID = "";
+  let savingTenantID = "";
+  let deletingTenantID = "";
+  let resettingPasswordTenantID = "";
+  let editingTenantID = "";
   let items: PendingRegistration[] = [];
   let tenants: TenantSummary[] = [];
   let pendingPasswords: Record<string, string> = {};
+  let tenantEditName: Record<string, string> = {};
+  let tenantEditCNPJ: Record<string, string> = {};
+  let tenantResetPasswords: Record<string, string> = {};
   let query = "";
   let error = "";
   let success = "";
@@ -32,6 +39,96 @@
       error = err instanceof APIError ? err.message : "Falha ao carregar dados administrativos";
     } finally {
       loading = false;
+    }
+  }
+
+  function beginTenantEdit(tenant: TenantSummary): void {
+    // Preenche os campos editaveis para manter o rascunho isolado por tenant.
+    editingTenantID = tenant.tenant_id;
+    tenantEditName[tenant.tenant_id] = tenant.tenant_name;
+    tenantEditCNPJ[tenant.tenant_id] = tenant.tenant_cnpj ?? "";
+  }
+
+  function cancelTenantEdit(tenantID: string): void {
+    editingTenantID = "";
+    delete tenantEditName[tenantID];
+    delete tenantEditCNPJ[tenantID];
+  }
+
+  async function saveTenant(tenantID: string): Promise<void> {
+    savingTenantID = tenantID;
+    error = "";
+    success = "";
+    try {
+      const tenantName = (tenantEditName[tenantID] ?? "").trim();
+      const tenantCNPJ = (tenantEditCNPJ[tenantID] ?? "").trim();
+      await api.updateTenant(tenantID, { tenant_name: tenantName, tenant_cnpj: tenantCNPJ });
+      // Atualiza a grade local sem obrigar recarga completa.
+      tenants = tenants.map((tenant) =>
+        tenant.tenant_id === tenantID
+          ? { ...tenant, tenant_name: tenantName, tenant_cnpj: tenantCNPJ }
+          : tenant
+      );
+      // Sincroniza o nome tambem na grade de pendencias.
+      items = items.map((item) =>
+        item.tenant_id === tenantID ? { ...item, tenant_name: tenantName } : item
+      );
+      cancelTenantEdit(tenantID);
+      success = "Imobiliaria atualizada com sucesso.";
+    } catch (err) {
+      error = err instanceof APIError ? err.message : "Falha ao atualizar imobiliaria";
+    } finally {
+      savingTenantID = "";
+    }
+  }
+
+  async function removeTenant(tenant: TenantSummary): Promise<void> {
+    if (
+      !window.confirm(
+        `Confirma excluir a imobiliaria "${tenant.tenant_name}"? Esta acao remove usuarios e contratos vinculados.`
+      )
+    ) {
+      return;
+    }
+
+    deletingTenantID = tenant.tenant_id;
+    error = "";
+    success = "";
+    try {
+      await api.deleteTenant(tenant.tenant_id);
+      // Remove a imobiliaria da grade principal e quaisquer pendencias do mesmo tenant.
+      tenants = tenants.filter((item) => item.tenant_id !== tenant.tenant_id);
+      items = items.filter((item) => item.tenant_id !== tenant.tenant_id);
+      cancelTenantEdit(tenant.tenant_id);
+      delete tenantResetPasswords[tenant.tenant_id];
+      success = "Imobiliaria excluida com sucesso.";
+    } catch (err) {
+      error = err instanceof APIError ? err.message : "Falha ao excluir imobiliaria";
+    } finally {
+      deletingTenantID = "";
+    }
+  }
+
+  async function resetTenantAdminPassword(tenant: TenantSummary): Promise<void> {
+    const newPassword = (tenantResetPasswords[tenant.tenant_id] ?? "").trim();
+    if (!newPassword) {
+      error = "Informe a nova senha do administrador da imobiliaria.";
+      success = "";
+      return;
+    }
+
+    resettingPasswordTenantID = tenant.tenant_id;
+    error = "";
+    success = "";
+    try {
+      await api.resetTenantAdminPassword(tenant.tenant_id, newPassword);
+      // Limpa a senha digitada apos aplicacao para reduzir exposicao em tela.
+      tenantResetPasswords[tenant.tenant_id] = "";
+      success = "Senha do administrador redefinida com sucesso.";
+    } catch (err) {
+      error = err instanceof APIError ? err.message : "Falha ao redefinir senha do administrador";
+    } finally {
+      resettingPasswordTenantID = "";
     }
   }
 
@@ -180,6 +277,10 @@
       <p>Consulte os tenants ja criados e a situacao de usuarios de cada imobiliaria.</p>
     </div>
 
+    <div class="notice info">
+      A senha atual nao pode ser exibida: por seguranca ela e armazenada criptografada. Use "Redefinir senha" para definir uma nova.
+    </div>
+
     {#if loading}
       <p>Carregando imobiliarias...</p>
     {:else}
@@ -193,22 +294,83 @@
               <th>Usuarios</th>
               <th>Usuarios ativos</th>
               <th>Cadastro</th>
+              <th>Redefinir senha admin</th>
+              <th>Acoes</th>
             </tr>
           </thead>
           <tbody>
             {#if filteredTenants.length === 0}
               <tr>
-                <td colspan="6">Nenhuma imobiliaria encontrada para o filtro informado.</td>
+                <td colspan="8">Nenhuma imobiliaria encontrada para o filtro informado.</td>
               </tr>
             {:else}
               {#each filteredTenants as tenant}
                 <tr>
-                  <td>{tenant.tenant_name}</td>
-                  <td>{tenant.tenant_cnpj || "-"}</td>
+                  <td>
+                    {#if editingTenantID === tenant.tenant_id}
+                      <input
+                        placeholder="Nome da imobiliaria"
+                        bind:value={tenantEditName[tenant.tenant_id]}
+                      />
+                    {:else}
+                      {tenant.tenant_name}
+                    {/if}
+                  </td>
+                  <td>
+                    {#if editingTenantID === tenant.tenant_id}
+                      <input
+                        placeholder="CNPJ"
+                        bind:value={tenantEditCNPJ[tenant.tenant_id]}
+                      />
+                    {:else}
+                      {tenant.tenant_cnpj || "-"}
+                    {/if}
+                  </td>
                   <td>{tenant.admin_email || "-"}</td>
                   <td>{tenant.total_users}</td>
                   <td>{tenant.active_users}</td>
                   <td>{new Date(tenant.created_at).toLocaleString("pt-BR")}</td>
+                  <td>
+                    <div class="row-inline">
+                      <input
+                        type="password"
+                        placeholder="Nova senha (min 8)"
+                        bind:value={tenantResetPasswords[tenant.tenant_id]}
+                      />
+                      <button
+                        class="btn ghost"
+                        on:click={() => resetTenantAdminPassword(tenant)}
+                        disabled={resettingPasswordTenantID === tenant.tenant_id || !tenant.admin_email}
+                      >
+                        {resettingPasswordTenantID === tenant.tenant_id ? "Aplicando..." : "Aplicar"}
+                      </button>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="row-actions">
+                      {#if editingTenantID === tenant.tenant_id}
+                        <button
+                          class="btn primary"
+                          on:click={() => saveTenant(tenant.tenant_id)}
+                          disabled={savingTenantID === tenant.tenant_id}
+                        >
+                          {savingTenantID === tenant.tenant_id ? "Salvando..." : "Salvar"}
+                        </button>
+                        <button class="btn ghost" on:click={() => cancelTenantEdit(tenant.tenant_id)}>
+                          Cancelar
+                        </button>
+                      {:else}
+                        <button class="btn ghost" on:click={() => beginTenantEdit(tenant)}>Editar</button>
+                      {/if}
+                      <button
+                        class="btn danger"
+                        on:click={() => removeTenant(tenant)}
+                        disabled={deletingTenantID === tenant.tenant_id}
+                      >
+                        {deletingTenantID === tenant.tenant_id ? "Excluindo..." : "Excluir"}
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               {/each}
             {/if}
@@ -226,3 +388,20 @@
     <div class="notice success">{success}</div>
   {/if}
 </section>
+
+<style>
+  .row-inline {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    min-width: 260px;
+  }
+
+  .row-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    min-width: 190px;
+  }
+</style>
