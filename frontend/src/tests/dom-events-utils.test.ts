@@ -35,6 +35,19 @@ describe("dom-events utils", () => {
     expect(readSelectValue(event)).toBe("Pessoa Juridica");
   });
 
+  it("deve ler select em evento delegado quando currentTarget nao for o select", () => {
+    // Reproduz delegacao de evento: target=OPTION e currentTarget diferente do SELECT.
+    const select = document.createElement("select");
+    const option = document.createElement("option");
+    option.value = "Pessoa Juridica";
+    option.text = "Pessoa Juridica";
+    select.appendChild(option);
+    select.value = "Pessoa Juridica";
+
+    const delegatedEvent = { target: option, currentTarget: document.body } as unknown as Event;
+    expect(readSelectValue(delegatedEvent)).toBe("Pessoa Juridica");
+  });
+
   it("deve ler valor de textarea e retornar vazio para tipo inesperado", () => {
     const textarea = document.createElement("textarea");
     textarea.value = "texto";

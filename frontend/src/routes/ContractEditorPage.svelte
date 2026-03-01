@@ -1146,9 +1146,12 @@
                   <div class="party-card">
                     <div class="field">
                       <label for={`${section.idPrefix}_tipo_${index}`}>Tipo da parte</label>
+                      <!-- Atualiza no input e no change para alternar PF/PJ sem atraso visual. -->
                       <select
                         id={`${section.idPrefix}_tipo_${index}`}
                         value={partyTypeOption(party.tipo)}
+                        on:input={(event) =>
+                          onPartyTipoChange(section.role, index, selectValue(event))}
                         on:change={(event) =>
                           onPartyTipoChange(section.role, index, selectValue(event))}
                       >
