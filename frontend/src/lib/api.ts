@@ -195,13 +195,12 @@ export const api = {
     );
   },
 
-  async approvePendingRegistration(userID: string, newPassword = ""): Promise<{ user: AuthResponse["user"]; message: string }> {
-    // Permite ao admin da plataforma definir senha no momento da aprovacao.
+  async approvePendingRegistration(userID: string): Promise<{ user: AuthResponse["user"]; message: string }> {
+    // Aprovacao apenas ativa o cadastro; troca de senha ocorre depois pelo fluxo apropriado.
     return request<{ user: AuthResponse["user"]; message: string }>(
       `/auth/pending-registrations/${encodeURIComponent(userID)}/approve`,
       {
-        method: "POST",
-        body: { new_password: newPassword }
+        method: "POST"
       }
     );
   },

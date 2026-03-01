@@ -16,7 +16,6 @@
   let editingTenantID = "";
   let items: PendingRegistration[] = [];
   let tenants: TenantSummary[] = [];
-  let pendingPasswords: Record<string, string> = {};
   let tenantEditName: Record<string, string> = {};
   let tenantEditCNPJ: Record<string, string> = {};
   let tenantResetPasswords: Record<string, string> = {};
@@ -138,8 +137,7 @@
     success = "";
     try {
       const approvedItem = items.find((item) => item.user_id === userID);
-      const password = pendingPasswords[userID] ?? "";
-      await api.approvePendingRegistration(userID, password);
+      await api.approvePendingRegistration(userID);
       // Atualiza a grade para refletir a aprovacao sem precisar recarregar a pagina inteira.
       items = items.filter((item) => item.user_id !== userID);
       if (approvedItem) {
@@ -150,7 +148,6 @@
             : tenant
         );
       }
-      delete pendingPasswords[userID];
       success = "Cadastro aprovado com sucesso.";
     } catch (err) {
       error = err instanceof APIError ? err.message : "Falha ao aprovar cadastro";
@@ -205,7 +202,7 @@
   <div class="panel">
     <div class="page-head">
       <h2>Aprovacao de Cadastros</h2>
-      <p>Visualize os dados do cadastrante, ajuste a senha e aprove o acesso.</p>
+      <p>Visualize os dados do cadastrante e aprove o acesso. A troca de senha ocorre apenas apos a aprovacao.</p>
     </div>
 
     <div class="grid cols-2">
@@ -230,14 +227,13 @@
               <th>Nome</th>
               <th>Email</th>
               <th>Data</th>
-              <th>Nova senha (opcional)</th>
               <th>Acao</th>
             </tr>
           </thead>
           <tbody>
             {#if filteredItems.length === 0}
               <tr>
-                <td colspan="6">Nenhum cadastro pendente para o filtro informado.</td>
+                <td colspan="5">Nenhum cadastro pendente para o filtro informado.</td>
               </tr>
             {:else}
               {#each filteredItems as item}
@@ -246,13 +242,6 @@
                   <td>{item.name}</td>
                   <td>{item.email}</td>
                   <td>{new Date(item.created_at).toLocaleString("pt-BR")}</td>
-                  <td>
-                    <input
-                      type="password"
-                      placeholder="Manter senha atual"
-                      bind:value={pendingPasswords[item.user_id]}
-                    />
-                  </td>
                   <td>
                     <button
                       class="btn primary"

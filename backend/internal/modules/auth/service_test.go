@@ -462,7 +462,7 @@ func TestRegisterTenantAdminPendingApprovalFlow(t *testing.T) {
 	}
 }
 
-func TestPlatformAdminApprovesPendingRegistrationWithNewPassword(t *testing.T) {
+func TestPlatformAdminApprovesPendingRegistrationWithoutChangingPassword(t *testing.T) {
 	repo := newFakeRepo()
 	svc := NewService(repo, ServiceConfig{
 		AccessTokenTTL:       15 * time.Minute,
@@ -506,8 +506,7 @@ func TestPlatformAdminApprovesPendingRegistrationWithNewPassword(t *testing.T) {
 	}
 
 	approvedUser, err := svc.ApprovePendingRegistration(context.Background(), actor, ApproveRegistrationInput{
-		UserID:      registerResult.User.ID,
-		NewPassword: "NovaSenhaAprovada123",
+		UserID: registerResult.User.ID,
 	})
 	if err != nil {
 		t.Fatalf("approve failed: %v", err)
@@ -518,10 +517,10 @@ func TestPlatformAdminApprovesPendingRegistrationWithNewPassword(t *testing.T) {
 
 	_, err = svc.Login(context.Background(), LoginInput{
 		Email:    "novo@teste.com",
-		Password: "NovaSenhaAprovada123",
+		Password: "senhaInicial123",
 	}, ClientMetadata{})
 	if err != nil {
-		t.Fatalf("login after approval failed: %v", err)
+		t.Fatalf("login with original password after approval failed: %v", err)
 	}
 }
 

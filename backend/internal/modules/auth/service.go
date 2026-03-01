@@ -428,7 +428,7 @@ func (s *Service) ResetTenantAdminPassword(ctx context.Context, actor AuthClaims
 	return adminUser, nil
 }
 
-// ApprovePendingRegistration ativa o cadastro e permite redefinir senha no momento da aprovacao.
+// ApprovePendingRegistration ativa o cadastro sem alterar senha.
 func (s *Service) ApprovePendingRegistration(ctx context.Context, actor AuthClaims, in ApproveRegistrationInput) (*User, error) {
 	if !s.IsPlatformAdmin(actor) {
 		return nil, common.NewForbidden("insufficient_permissions", "somente admin da plataforma pode aprovar cadastros")
@@ -448,19 +448,6 @@ func (s *Service) ApprovePendingRegistration(ctx context.Context, actor AuthClai
 	}
 	if user.IsActive {
 		return nil, common.NewConflict("already_approved", "cadastro ja aprovado")
-	}
-
-	if strings.TrimSpace(in.NewPassword) != "" {
-		if err := validatePassword(in.NewPassword); err != nil {
-			return nil, err
-		}
-		passwordHash, err := hashPassword(in.NewPassword)
-		if err != nil {
-			return nil, err
-		}
-		if err := s.repo.UpdateUserPassword(ctx, user.ID, passwordHash); err != nil {
-			return nil, err
-		}
 	}
 
 	if err := s.repo.SetUserActive(ctx, user.ID, true); err != nil {

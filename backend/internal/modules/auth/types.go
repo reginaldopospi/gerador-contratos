@@ -109,10 +109,9 @@ type ResetTenantAdminPasswordInput struct {
 	NewPassword string `json:"new_password"`
 }
 
-// ApproveRegistrationInput permite aprovar e opcionalmente redefinir a senha do cadastro.
+// ApproveRegistrationInput aprova o cadastro sem alterar senha.
 type ApproveRegistrationInput struct {
-	UserID      string
-	NewPassword string `json:"new_password"`
+	UserID string
 }
 
 // PlatformAdminBootstrapInput define o usuario administrativo da plataforma.

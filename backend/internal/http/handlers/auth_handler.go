@@ -286,18 +286,9 @@ func (h *AuthHandler) approvePendingRegistration(w http.ResponseWriter, r *http.
 		return
 	}
 
-	var body struct {
-		NewPassword string `json:"new_password"`
-	}
-	if err := httpx.DecodeJSON(r, &body); err != nil {
-		httpx.WriteError(w, common.NewBadRequest("invalid_payload", "payload invalido"))
-		return
-	}
-
 	userID := chi.URLParam(r, "userID")
 	user, err := h.service.ApprovePendingRegistration(r.Context(), claims, auth.ApproveRegistrationInput{
-		UserID:      userID,
-		NewPassword: body.NewPassword,
+		UserID: userID,
 	})
 	if err != nil {
 		httpx.WriteError(w, err)
