@@ -482,3 +482,37 @@ func TestNonPlatformAdminCannotApproveRegistrations(t *testing.T) {
 		t.Fatalf("expected forbidden list for non-platform admin")
 	}
 }
+
+func TestPlatformAdminCanLoginWithUsernameAlias(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, ServiceConfig{
+		AccessTokenTTL:        15 * time.Minute,
+		RefreshTokenTTL:       7 * 24 * time.Hour,
+		PasswordResetTTL:      30 * time.Minute,
+		JWTSecret:             "test-secret",
+		AppEnv:                "dev",
+		PlatformAdminUsername: "admin",
+		PlatformAdminEmail:    "admin@plataforma.local",
+		RegistrationApproval:  true,
+	})
+
+	if err := svc.BootstrapPlatformAdmin(context.Background(), PlatformAdminBootstrapInput{
+		TenantName: "Plataforma",
+		Name:       "Administrador da Plataforma",
+		Email:      "admin@plataforma.local",
+		Password:   "Admin12345",
+	}); err != nil {
+		t.Fatalf("bootstrap platform admin failed: %v", err)
+	}
+
+	result, err := svc.Login(context.Background(), LoginInput{
+		Email:    "admin",
+		Password: "Admin12345",
+	}, ClientMetadata{})
+	if err != nil {
+		t.Fatalf("login with admin username failed: %v", err)
+	}
+	if result.User.Email != "admin@plataforma.local" {
+		t.Fatalf("unexpected platform admin email: %s", result.User.Email)
+	}
+}

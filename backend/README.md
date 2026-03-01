@@ -13,8 +13,11 @@ Use `backend/.env.example` como referencia.
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`: habilitam envio de e-mail no fluxo de recuperacao.
 - `PASSWORD_RESET_URL`: URL base usada no e-mail para montar o link com `token`.
 - `REQUIRE_REGISTRATION_APPROVAL`: quando `1`, novos cadastros entram como pendentes.
-- `PLATFORM_ADMIN_EMAIL`, `PLATFORM_ADMIN_PASSWORD`, `PLATFORM_ADMIN_NAME`, `PLATFORM_TENANT_NAME`: definem o admin que aprova cadastros pendentes.
+- `PLATFORM_ADMIN_USERNAME`, `PLATFORM_ADMIN_EMAIL`, `PLATFORM_ADMIN_PASSWORD`, `PLATFORM_ADMIN_NAME`, `PLATFORM_TENANT_NAME`: definem o admin que aprova cadastros pendentes (login pode usar username ou email).
   - Em ambiente local, existem valores padrao para facilitar testes; em producao, configure valores proprios.
+
+Observacao:
+- A API carrega automaticamente variaveis de `.env` (na pasta `backend` ou na raiz do projeto) quando presentes.
 
 ## Como rodar
 

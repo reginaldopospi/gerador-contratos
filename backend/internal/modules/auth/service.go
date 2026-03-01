@@ -19,6 +19,7 @@ type Service struct {
 	refreshTokenTTL       time.Duration
 	passwordResetTTL      time.Duration
 	appEnv                string
+	platformAdminUsername string
 	platformAdminEmail    string
 	registrationApproval  bool
 	passwordResetNotifier PasswordResetNotifier
@@ -30,6 +31,7 @@ type ServiceConfig struct {
 	PasswordResetTTL      time.Duration
 	JWTSecret             string
 	AppEnv                string
+	PlatformAdminUsername string
 	PlatformAdminEmail    string
 	RegistrationApproval  bool
 	PasswordResetNotifier PasswordResetNotifier
@@ -41,6 +43,10 @@ func NewService(repo Repository, cfg ServiceConfig) *Service {
 		// O notifier nulo evita quebrar o fluxo em ambientes sem SMTP configurado.
 		notifier = NoopPasswordResetNotifier{}
 	}
+	adminUsername := strings.TrimSpace(strings.ToLower(cfg.PlatformAdminUsername))
+	if adminUsername == "" {
+		adminUsername = "admin"
+	}
 
 	return &Service{
 		repo:                  repo,
@@ -49,6 +55,7 @@ func NewService(repo Repository, cfg ServiceConfig) *Service {
 		refreshTokenTTL:       cfg.RefreshTokenTTL,
 		passwordResetTTL:      cfg.PasswordResetTTL,
 		appEnv:                cfg.AppEnv,
+		platformAdminUsername: adminUsername,
 		platformAdminEmail:    strings.TrimSpace(strings.ToLower(cfg.PlatformAdminEmail)),
 		registrationApproval:  cfg.RegistrationApproval,
 		passwordResetNotifier: notifier,
@@ -167,11 +174,21 @@ func (s *Service) RegisterUser(ctx context.Context, actor AuthClaims, in Registe
 }
 
 func (s *Service) Login(ctx context.Context, in LoginInput, metadata ClientMetadata) (*AuthResult, error) {
-	email := strings.TrimSpace(strings.ToLower(in.Email))
+	identifier := strings.TrimSpace(strings.ToLower(in.Email))
 	// Keep password exactly as typed to stay consistent with register/reset hashing behavior.
 	password := in.Password
-	if !isValidEmail(email) || password == "" {
+	if identifier == "" || password == "" {
 		return nil, common.NewUnauthorized("invalid_credentials", "email ou senha invalidos")
+	}
+
+	email := identifier
+	if !isValidEmail(email) {
+		// Permite login administrativo com username fixo (ex.: "admin") mapeando para o email configurado.
+		if identifier == s.platformAdminUsername && s.platformAdminEmail != "" {
+			email = s.platformAdminEmail
+		} else {
+			return nil, common.NewUnauthorized("invalid_credentials", "email ou senha invalidos")
+		}
 	}
 
 	user, err := s.repo.GetUserByEmail(ctx, email)

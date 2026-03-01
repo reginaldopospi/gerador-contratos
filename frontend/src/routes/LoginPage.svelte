@@ -4,7 +4,7 @@
   import { api, APIError } from "../lib/api";
   import { isAuthenticated, setAuth } from "../lib/stores/auth";
 
-  let email = "";
+  let identifier = "";
   let password = "";
   let loading = false;
   let error = "";
@@ -19,7 +19,7 @@
     loading = true;
     error = "";
     try {
-      const result = await api.login({ email, password });
+      const result = await api.login({ email: identifier, password });
       setAuth({
         accessToken: result.tokens.access_token,
         refreshToken: result.tokens.refresh_token,
@@ -42,8 +42,8 @@
 
   <div class="grid">
     <div class="field">
-      <label for="email">Email</label>
-      <input id="email" type="email" bind:value={email} placeholder="admin@empresa.com" />
+      <label for="identifier">Usuario ou Email</label>
+      <input id="identifier" type="text" bind:value={identifier} placeholder="admin" />
     </div>
 
     <div class="field">

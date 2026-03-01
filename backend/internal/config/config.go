@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bufio"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -10,6 +11,7 @@ import (
 
 const (
 	// Valores padrao para facilitar desenvolvimento local do fluxo de aprovacao.
+	DefaultPlatformAdminUsername = "admin"
 	DefaultPlatformAdminEmail    = "admin@plataforma.local"
 	DefaultPlatformAdminPassword = "Admin12345"
 	DefaultPlatformAdminName     = "Administrador da Plataforma"
@@ -32,6 +34,7 @@ type Config struct {
 	SMTPFrom              string
 	PasswordResetURL      string
 	RegistrationApproval  bool
+	PlatformAdminUsername string
 	PlatformAdminEmail    string
 	PlatformAdminPassword string
 	PlatformAdminName     string
@@ -39,6 +42,8 @@ type Config struct {
 }
 
 func Load() Config {
+	loadDotEnvIfPresent()
+
 	return Config{
 		Port:                  getEnv("APP_PORT", "8080"),
 		DBPath:                getEnv("DB_PATH", defaultDBPath()),
@@ -55,11 +60,56 @@ func Load() Config {
 		SMTPFrom:              getEnv("SMTP_FROM", ""),
 		PasswordResetURL:      getEnv("PASSWORD_RESET_URL", ""),
 		RegistrationApproval:  getEnvAsBool("REQUIRE_REGISTRATION_APPROVAL", true),
+		PlatformAdminUsername: strings.TrimSpace(strings.ToLower(getEnv("PLATFORM_ADMIN_USERNAME", DefaultPlatformAdminUsername))),
 		PlatformAdminEmail:    getEnv("PLATFORM_ADMIN_EMAIL", DefaultPlatformAdminEmail),
 		PlatformAdminPassword: getEnv("PLATFORM_ADMIN_PASSWORD", DefaultPlatformAdminPassword),
 		PlatformAdminName:     getEnv("PLATFORM_ADMIN_NAME", DefaultPlatformAdminName),
 		PlatformTenantName:    getEnv("PLATFORM_TENANT_NAME", DefaultPlatformTenantName),
 	}
+}
+
+// loadDotEnvIfPresent carrega variaveis de um arquivo .env quando presentes.
+func loadDotEnvIfPresent() {
+	paths := []string{".env", "./backend/.env"}
+	for _, p := range paths {
+		if err := loadEnvFile(p); err == nil {
+			return
+		}
+	}
+}
+
+func loadEnvFile(path string) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+		if key == "" {
+			continue
+		}
+		if len(value) >= 2 && strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
+			value = strings.TrimPrefix(strings.TrimSuffix(value, "\""), "\"")
+		}
+		if _, exists := os.LookupEnv(key); exists {
+			continue
+		}
+		_ = os.Setenv(key, value)
+	}
+
+	return scanner.Err()
 }
 
 func getEnv(key, fallback string) string {

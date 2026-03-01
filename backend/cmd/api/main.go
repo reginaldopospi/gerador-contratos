@@ -68,6 +68,7 @@ func main() {
 		PasswordResetTTL:      cfg.PasswordResetTokenTTL,
 		JWTSecret:             cfg.JWTSecret,
 		AppEnv:                cfg.AppEnv,
+		PlatformAdminUsername: cfg.PlatformAdminUsername,
 		PlatformAdminEmail:    cfg.PlatformAdminEmail,
 		RegistrationApproval:  cfg.RegistrationApproval,
 		PasswordResetNotifier: passwordResetNotifier,
