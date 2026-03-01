@@ -1,6 +1,6 @@
 export type PartyRole = "vendedores" | "compradores";
 export type ExtraFieldType = "text" | "number" | "boolean" | "json";
-export type PartyType = "Pessoa Fisica" | "Pessoa Juridica";
+export type PartyType = "" | "Pessoa Fisica" | "Pessoa Juridica";
 
 export interface PartyDraft {
   ref: string;
@@ -227,7 +227,8 @@ export function defaultPartyRef(role: PartyRole, index: number): string {
 export function emptyPartyDraft(role: PartyRole, index: number): PartyDraft {
   return {
     ref: defaultPartyRef(role, index),
-    tipo: PARTY_TYPE_FISICA,
+    // Obriga selecao explicita no editor antes de exibir os campos condicionais.
+    tipo: "",
     nome: "",
     razaoSocial: "",
     nacionalidade: "brasileiro",

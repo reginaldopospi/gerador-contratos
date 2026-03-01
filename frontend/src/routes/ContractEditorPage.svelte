@@ -409,8 +409,19 @@
     return normalizePartyType(value);
   }
 
+  function selectedPartyTypeOption(value: string): ((typeof PARTY_TYPE_OPTIONS)[number] | "") {
+    if (value.trim() === "") {
+      return "";
+    }
+    return partyTypeOption(value);
+  }
+
+  function hasPartyTypeSelected(party: PartyDraft): boolean {
+    return selectedPartyTypeOption(party.tipo) !== "";
+  }
+
   function isPartyPF(party: PartyDraft): boolean {
-    return partyTypeOption(party.tipo) === "Pessoa Fisica";
+    return selectedPartyTypeOption(party.tipo) === "Pessoa Fisica";
   }
 
   function shouldShowConjuge(party: PartyDraft): boolean {
@@ -631,7 +642,7 @@
   }
 
   function onPartyTipoChange(role: PartyRole, index: number, value: string): void {
-    const tipo = partyTypeOption(value);
+    const tipo = value.trim() === "" ? "" : partyTypeOption(value);
     const lookupKey = partyLookupKey(role, index);
     partyLastFetchedCnpj.delete(lookupKey);
     partyCnpjLookupRequestIds.delete(lookupKey);
@@ -1149,19 +1160,24 @@
                       <!-- Atualiza no input e no change para alternar PF/PJ sem atraso visual. -->
                       <select
                         id={`${section.idPrefix}_tipo_${index}`}
-                        value={partyTypeOption(party.tipo)}
+                        value={selectedPartyTypeOption(party.tipo)}
                         on:input={(event) =>
                           onPartyTipoChange(section.role, index, selectValue(event))}
                         on:change={(event) =>
                           onPartyTipoChange(section.role, index, selectValue(event))}
                       >
+                        <option value="">Selecione o tipo da parte</option>
                         {#each PARTY_TYPE_OPTIONS as option}
                           <option value={option}>{option}</option>
                         {/each}
                       </select>
                     </div>
 
-                    {#if isPartyPF(party)}
+                    {#if !hasPartyTypeSelected(party)}
+                      <p class="hint">
+                        Selecione o tipo da parte para exibir os campos do formulario.
+                      </p>
+                    {:else if isPartyPF(party)}
                       <div class="grid cols-2">
                         <div class="field">
                           <label for={`${section.idPrefix}_nome_${index}`}>Nome completo</label>
@@ -1406,78 +1422,80 @@
                       </div>
                     {/if}
 
-                    <div class="editor-subsection">
-                      <h5>{partyAddressSectionTitle(party)}</h5>
-                      <div class="grid cols-2">
-                        <div class="field">
-                          <label for={`${section.idPrefix}_end_cep_${index}`}>CEP</label>
-                          <input
-                            id={`${section.idPrefix}_end_cep_${index}`}
-                            value={party.endCep}
-                            on:input={(event) => updateParty(section.role, index, "endCep", inputValue(event))}
-                          />
-                        </div>
-                        <div class="field">
-                          <label for={`${section.idPrefix}_end_logradouro_${index}`}>Logradouro</label>
-                          <input
-                            id={`${section.idPrefix}_end_logradouro_${index}`}
-                            value={party.endLogradouro}
-                            on:input={(event) =>
-                              updateParty(section.role, index, "endLogradouro", inputValue(event))}
-                          />
-                        </div>
-                        <div class="field">
-                          <label for={`${section.idPrefix}_end_numero_${index}`}>Numero</label>
-                          <input
-                            id={`${section.idPrefix}_end_numero_${index}`}
-                            value={party.endNumero}
-                            on:input={(event) => updateParty(section.role, index, "endNumero", inputValue(event))}
-                          />
-                        </div>
-                        <div class="field">
-                          <label for={`${section.idPrefix}_end_complemento_${index}`}>Complemento</label>
-                          <input
-                            id={`${section.idPrefix}_end_complemento_${index}`}
-                            value={party.endComplemento}
-                            on:input={(event) =>
-                              updateParty(section.role, index, "endComplemento", inputValue(event))}
-                          />
-                        </div>
-                        <div class="field">
-                          <label for={`${section.idPrefix}_end_bairro_${index}`}>Bairro</label>
-                          <input
-                            id={`${section.idPrefix}_end_bairro_${index}`}
-                            value={party.endBairro}
-                            on:input={(event) => updateParty(section.role, index, "endBairro", inputValue(event))}
-                          />
-                        </div>
-                        <div class="field">
-                          <label for={`${section.idPrefix}_end_cidade_${index}`}>Cidade</label>
-                          <input
-                            id={`${section.idPrefix}_end_cidade_${index}`}
-                            value={party.endCidade}
-                            on:input={(event) => updateParty(section.role, index, "endCidade", inputValue(event))}
-                          />
-                        </div>
-                        <div class="field">
-                          <label for={`${section.idPrefix}_end_uf_${index}`}>UF</label>
-                          <input
-                            id={`${section.idPrefix}_end_uf_${index}`}
-                            value={party.endUf}
-                            on:input={(event) => updateParty(section.role, index, "endUf", inputValue(event))}
-                          />
-                        </div>
-                        <div class="field span-all">
-                          <label for={`${section.idPrefix}_end_texto_${index}`}>Endereco completo (gerado)</label>
-                          <textarea
-                            id={`${section.idPrefix}_end_texto_${index}`}
-                            value={partyAddressPreview(party)}
-                            rows="3"
-                            disabled
-                          ></textarea>
+                    {#if hasPartyTypeSelected(party)}
+                      <div class="editor-subsection">
+                        <h5>{partyAddressSectionTitle(party)}</h5>
+                        <div class="grid cols-2">
+                          <div class="field">
+                            <label for={`${section.idPrefix}_end_cep_${index}`}>CEP</label>
+                            <input
+                              id={`${section.idPrefix}_end_cep_${index}`}
+                              value={party.endCep}
+                              on:input={(event) => updateParty(section.role, index, "endCep", inputValue(event))}
+                            />
+                          </div>
+                          <div class="field">
+                            <label for={`${section.idPrefix}_end_logradouro_${index}`}>Logradouro</label>
+                            <input
+                              id={`${section.idPrefix}_end_logradouro_${index}`}
+                              value={party.endLogradouro}
+                              on:input={(event) =>
+                                updateParty(section.role, index, "endLogradouro", inputValue(event))}
+                            />
+                          </div>
+                          <div class="field">
+                            <label for={`${section.idPrefix}_end_numero_${index}`}>Numero</label>
+                            <input
+                              id={`${section.idPrefix}_end_numero_${index}`}
+                              value={party.endNumero}
+                              on:input={(event) => updateParty(section.role, index, "endNumero", inputValue(event))}
+                            />
+                          </div>
+                          <div class="field">
+                            <label for={`${section.idPrefix}_end_complemento_${index}`}>Complemento</label>
+                            <input
+                              id={`${section.idPrefix}_end_complemento_${index}`}
+                              value={party.endComplemento}
+                              on:input={(event) =>
+                                updateParty(section.role, index, "endComplemento", inputValue(event))}
+                            />
+                          </div>
+                          <div class="field">
+                            <label for={`${section.idPrefix}_end_bairro_${index}`}>Bairro</label>
+                            <input
+                              id={`${section.idPrefix}_end_bairro_${index}`}
+                              value={party.endBairro}
+                              on:input={(event) => updateParty(section.role, index, "endBairro", inputValue(event))}
+                            />
+                          </div>
+                          <div class="field">
+                            <label for={`${section.idPrefix}_end_cidade_${index}`}>Cidade</label>
+                            <input
+                              id={`${section.idPrefix}_end_cidade_${index}`}
+                              value={party.endCidade}
+                              on:input={(event) => updateParty(section.role, index, "endCidade", inputValue(event))}
+                            />
+                          </div>
+                          <div class="field">
+                            <label for={`${section.idPrefix}_end_uf_${index}`}>UF</label>
+                            <input
+                              id={`${section.idPrefix}_end_uf_${index}`}
+                              value={party.endUf}
+                              on:input={(event) => updateParty(section.role, index, "endUf", inputValue(event))}
+                            />
+                          </div>
+                          <div class="field span-all">
+                            <label for={`${section.idPrefix}_end_texto_${index}`}>Endereco completo (gerado)</label>
+                            <textarea
+                              id={`${section.idPrefix}_end_texto_${index}`}
+                              value={partyAddressPreview(party)}
+                              rows="3"
+                              disabled
+                            ></textarea>
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    {/if}
 
                     <div class="inline-actions">
                       <button

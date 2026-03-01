@@ -7,6 +7,14 @@ import {
 } from "../lib/utils/contract-editor";
 
 describe("draftFromContractData", () => {
+  it("deve iniciar partes novas sem tipo selecionado", () => {
+    const draft = emptyContractDraft();
+
+    // O editor deve exigir selecao explicita antes de abrir os campos de PF/PJ.
+    expect(draft.vendedores[0].tipo).toBe("");
+    expect(draft.compradores[0].tipo).toBe("");
+  });
+
   it("deve mapear campos estruturados e extras", () => {
     const draft = draftFromContractData({
       vendedores: ["vend_1"],
