@@ -111,6 +111,7 @@ const SELECTED_CLAUSES_KEY = "clausulas_selecionadas";
 const SELECTED_CLAUSES_LINKED_KEY = "clausulas_selecionadas_vinculos";
 const CUSTOM_CLAUSES_KEY = "clausulas_customizadas";
 const SELECTED_CLAUSES_ALIASES = ["clause_keys", "clausulas_keys"] as const;
+const CONTRACT_META_KEYS = ["contrato__numero", "contrato__tipo"] as const;
 
 const FIELD_TO_DATA_KEY = {
   imovelTipo: "imovel__tipo",
@@ -152,6 +153,8 @@ const FIELD_TO_DATA_KEY = {
 
 const BASE_RESERVED_KEYS = new Set<string>([
   ...Object.values(FIELD_TO_DATA_KEY),
+  // Mantem metadados internos do contrato fora da grade de campos adicionais.
+  ...CONTRACT_META_KEYS,
   "vendedores",
   "compradores",
   CLAUSES_KEY,

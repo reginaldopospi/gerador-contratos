@@ -20,6 +20,8 @@ describe("draftFromContractData", () => {
 
   it("deve mapear campos estruturados e extras", () => {
     const draft = draftFromContractData({
+      contrato__numero: "0001",
+      contrato__tipo: "Compromisso de Venda e Compra de Imovel",
       vendedores: ["vend_1"],
       compradores: ["comp_1"],
       clausulas_selecionadas: ["multa_atraso", "foro_eleicao"],
@@ -82,10 +84,15 @@ describe("draftFromContractData", () => {
     const extraNumero = draft.extras.find((item) => item.key === "prioridade");
     const extraBool = draft.extras.find((item) => item.key === "aceita_permuta");
     const extraJson = draft.extras.find((item) => item.key === "metadados");
+    const extraContractNumber = draft.extras.find((item) => item.key === "contrato__numero");
+    const extraContractType = draft.extras.find((item) => item.key === "contrato__tipo");
 
     expect(extraNumero?.type).toBe("number");
     expect(extraBool?.type).toBe("boolean");
     expect(extraJson?.type).toBe("json");
+    // Chaves internas do contrato nao devem aparecer como campo adicional editavel.
+    expect(extraContractNumber).toBeUndefined();
+    expect(extraContractType).toBeUndefined();
   });
 
   it("deve aceitar aliases titulo/conteudo nas clausulas selecionadas vinculadas", () => {
