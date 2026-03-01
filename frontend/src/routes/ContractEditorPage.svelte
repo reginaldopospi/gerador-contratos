@@ -170,8 +170,12 @@
     { key: "precoOutros", label: "Outros valores", placeholder: "Detalhe complementos" }
   ];
 
+  const COMMISSION_PAYER_OPTIONS = [
+    "Parte Vendedora/Cedente",
+    "Parte Compradora/Cessionária",
+    "Ambas as Partes"
+  ] as const;
   const commissionFields: Array<{ key: DraftStringField; label: string; placeholder: string }> = [
-    { key: "quemPagaComissao", label: "Quem paga comissao", placeholder: "Ex.: Vendedor" },
     { key: "valorComissao", label: "Valor da comissao", placeholder: "Ex.: 6% ou R$ 18.000,00" },
     { key: "momentoPagto", label: "Momento do pagamento", placeholder: "Ex.: Na assinatura" }
   ];
@@ -492,22 +496,34 @@
     return ref !== "" ? `${role}_${ref}` : `${role}_${index}`;
   }
 
-  function getPartyCnpjLookupState(role: PartyRole, index: number): {
-    status: "idle" | "loading" | "error" | "success";
-    message: string;
-  } {
+  function getPartyCnpjLookupState(role: PartyRole, index: number): LookupState {
     return partyCnpjLookup.get(partyLookupKey(role, index)) ?? { status: "idle", message: "" };
   }
 
   function setPartyCnpjLookupState(
     role: PartyRole,
     index: number,
-    status: "idle" | "loading" | "error" | "success",
+    status: LookupStatus,
     message: string
   ): void {
     const nextLookup = new Map(partyCnpjLookup);
     nextLookup.set(partyLookupKey(role, index), { status, message });
     partyCnpjLookup = nextLookup;
+  }
+
+  function getPartyCepLookupState(role: PartyRole, index: number): LookupState {
+    return partyCepLookup.get(partyLookupKey(role, index)) ?? { status: "idle", message: "" };
+  }
+
+  function setPartyCepLookupState(
+    role: PartyRole,
+    index: number,
+    status: LookupStatus,
+    message: string
+  ): void {
+    const nextLookup = new Map(partyCepLookup);
+    nextLookup.set(partyLookupKey(role, index), { status, message });
+    partyCepLookup = nextLookup;
   }
 
   async function fillPartyFromCnpj(role: PartyRole, index: number, cnpjValue: string): Promise<void> {
@@ -616,6 +632,93 @@
     void fillPartyFromCnpj(role, index, formatted);
   }
 
+  type PartyCpfField = "cpf" | "conjCpf" | "repCpf";
+
+  function onPartyCpfInput(role: PartyRole, index: number, key: PartyCpfField, value: string): void {
+    const formatted = formatCpf(value);
+    patchParty(role, index, { [key]: formatted } as Partial<PartyDraft>);
+  }
+
+  function onPartyCepInput(role: PartyRole, index: number, value: string): void {
+    const formatted = formatCep(value);
+    updateParty(role, index, "endCep", formatted);
+
+    const digits = onlyCepDigits(formatted);
+    if (!isCompleteCep(digits)) {
+      setPartyCepLookupState(role, index, "idle", "");
+      return;
+    }
+
+    void fillPartyAddressFromCep(role, index, formatted);
+  }
+
+  async function fillPartyAddressFromCep(role: PartyRole, index: number, cepValue: string): Promise<void> {
+    const digits = onlyCepDigits(cepValue);
+    if (!isCompleteCep(digits)) {
+      return;
+    }
+
+    const lookupKey = partyLookupKey(role, index);
+    const currentParty = listByRole(role)[index];
+    if (!currentParty) {
+      return;
+    }
+
+    // Evita consultas repetidas quando o endereco principal ja foi preenchido para o mesmo CEP.
+    if (
+      partyLastFetchedCep.get(lookupKey) === digits &&
+      currentParty.endLogradouro.trim() !== "" &&
+      currentParty.endBairro.trim() !== "" &&
+      currentParty.endCidade.trim() !== "" &&
+      currentParty.endUf.trim() !== ""
+    ) {
+      return;
+    }
+
+    const requestId = (partyCepLookupRequestIds.get(lookupKey) ?? 0) + 1;
+    partyCepLookupRequestIds.set(lookupKey, requestId);
+    setPartyCepLookupState(role, index, "loading", "Buscando endereco pelo CEP...");
+
+    try {
+      const result = await lookupAddressByCep(digits);
+      if (partyCepLookupRequestIds.get(lookupKey) !== requestId) {
+        return;
+      }
+
+      if (!result) {
+        setPartyCepLookupState(role, index, "error", "CEP nao encontrado no ViaCEP.");
+        return;
+      }
+
+      const partyAfterLookup = listByRole(role)[index];
+      if (!partyAfterLookup) {
+        return;
+      }
+
+      patchParty(role, index, {
+        endCep: result.cep !== "" ? result.cep : formatCep(digits),
+        endLogradouro: result.logradouro !== "" ? result.logradouro : partyAfterLookup.endLogradouro,
+        endComplemento: result.complemento !== "" ? result.complemento : partyAfterLookup.endComplemento,
+        endBairro: result.bairro !== "" ? result.bairro : partyAfterLookup.endBairro,
+        endCidade: result.cidade !== "" ? result.cidade : partyAfterLookup.endCidade,
+        endUf: result.uf !== "" ? result.uf : partyAfterLookup.endUf
+      });
+
+      partyLastFetchedCep.set(lookupKey, digits);
+      setPartyCepLookupState(role, index, "success", "Endereco preenchido automaticamente pelo CEP.");
+    } catch (lookupErr) {
+      if (partyCepLookupRequestIds.get(lookupKey) !== requestId) {
+        return;
+      }
+      setPartyCepLookupState(
+        role,
+        index,
+        "error",
+        lookupErr instanceof Error ? lookupErr.message : "Nao foi possivel consultar o CEP agora."
+      );
+    }
+  }
+
   function partyAddressSectionTitle(party: PartyDraft): string {
     return isPartyPF(party) ? "Endereco" : "Endereco da empresa";
   }
@@ -653,13 +756,22 @@
     return PARTY_REGIME_OTHER_OPTION;
   }
 
+  // Evita valor livre no select de comissao ao carregar rascunhos antigos.
+  function selectedCommissionPayerOption(value: string): ((typeof COMMISSION_PAYER_OPTIONS)[number] | "") {
+    const matched = COMMISSION_PAYER_OPTIONS.find((option) => option === value.trim());
+    return matched ?? "";
+  }
+
   function onPartyTipoChange(role: PartyRole, index: number, value: string): void {
     const tipo = value.trim() === "" ? "" : partyTypeOption(value);
     const lookupKey = partyLookupKey(role, index);
     partyLastFetchedCnpj.delete(lookupKey);
     partyCnpjLookupRequestIds.delete(lookupKey);
+    partyLastFetchedCep.delete(lookupKey);
+    partyCepLookupRequestIds.delete(lookupKey);
     // Limpa feedback antigo ao trocar PF/PJ para evitar mensagens fora de contexto.
     setPartyCnpjLookupState(role, index, "idle", "");
+    setPartyCepLookupState(role, index, "idle", "");
     patchParty(role, index, { tipo });
   }
 
@@ -825,9 +937,28 @@
     const list = listByRole(role);
     const next = [...list, emptyPartyDraft(role, list.length + 1)];
     draft = { ...draft, [role]: next } as ContractEditorDraft;
+
+    // Garante que novas linhas iniciem sem mensagens residuais de consultas anteriores.
+    const newIndex = next.length - 1;
+    setPartyCnpjLookupState(role, newIndex, "idle", "");
+    setPartyCepLookupState(role, newIndex, "idle", "");
   }
 
   function removeParty(role: PartyRole, index: number): void {
+    const lookupKey = partyLookupKey(role, index);
+    partyCnpjLookupRequestIds.delete(lookupKey);
+    partyLastFetchedCnpj.delete(lookupKey);
+    partyCepLookupRequestIds.delete(lookupKey);
+    partyLastFetchedCep.delete(lookupKey);
+
+    const nextCnpjLookup = new Map(partyCnpjLookup);
+    nextCnpjLookup.delete(lookupKey);
+    partyCnpjLookup = nextCnpjLookup;
+
+    const nextCepLookup = new Map(partyCepLookup);
+    nextCepLookup.delete(lookupKey);
+    partyCepLookup = nextCepLookup;
+
     const list = listByRole(role);
     const filtered = list.filter((_, i) => i !== index);
     const next = filtered.length > 0 ? filtered : [emptyPartyDraft(role, 1)];
@@ -1245,7 +1376,8 @@
                           <input
                             id={`${section.idPrefix}_cpf_${index}`}
                             value={party.cpf}
-                            on:input={(event) => updateParty(section.role, index, "cpf", inputValue(event))}
+                            on:input={(event) =>
+                              onPartyCpfInput(section.role, index, "cpf", inputValue(event))}
                           />
                         </div>
 
@@ -1374,7 +1506,8 @@
                               <input
                                 id={`${section.idPrefix}_conj_cpf_${index}`}
                                 value={party.conjCpf}
-                                on:input={(event) => updateParty(section.role, index, "conjCpf", inputValue(event))}
+                                on:input={(event) =>
+                                  onPartyCpfInput(section.role, index, "conjCpf", inputValue(event))}
                               />
                             </div>
                           </div>
@@ -1433,7 +1566,8 @@
                           <input
                             id={`${section.idPrefix}_rep_cpf_${index}`}
                             value={party.repCpf}
-                            on:input={(event) => updateParty(section.role, index, "repCpf", inputValue(event))}
+                            on:input={(event) =>
+                              onPartyCpfInput(section.role, index, "repCpf", inputValue(event))}
                           />
                         </div>
                       </div>
@@ -1448,8 +1582,21 @@
                             <input
                               id={`${section.idPrefix}_end_cep_${index}`}
                               value={party.endCep}
-                              on:input={(event) => updateParty(section.role, index, "endCep", inputValue(event))}
+                              on:input={(event) => onPartyCepInput(section.role, index, inputValue(event))}
                             />
+                            {#if getPartyCepLookupState(section.role, index).status === "loading"}
+                              <small class="field-feedback info">
+                                {getPartyCepLookupState(section.role, index).message}
+                              </small>
+                            {:else if getPartyCepLookupState(section.role, index).status === "error"}
+                              <small class="field-feedback error">
+                                {getPartyCepLookupState(section.role, index).message}
+                              </small>
+                            {:else if getPartyCepLookupState(section.role, index).status === "success"}
+                              <small class="field-feedback info">
+                                {getPartyCepLookupState(section.role, index).message}
+                              </small>
+                            {/if}
                           </div>
                           <div class="field">
                             <label for={`${section.idPrefix}_end_logradouro_${index}`}>Logradouro</label>
@@ -1719,6 +1866,20 @@
           </div>
 
           <div class="grid cols-3">
+            <div class="field">
+              <label for="commission_quemPagaComissao">Quem paga comissao</label>
+              <select
+                id="commission_quemPagaComissao"
+                value={selectedCommissionPayerOption(draft.quemPagaComissao)}
+                on:change={(event) => updateField("quemPagaComissao", selectValue(event))}
+              >
+                <option value="">Selecione quem paga a comissao</option>
+                {#each COMMISSION_PAYER_OPTIONS as option}
+                  <option value={option}>{option}</option>
+                {/each}
+              </select>
+            </div>
+
             {#each commissionFields as field}
               <div class="field">
                 <label for={`commission_${field.key}`}>{field.label}</label>

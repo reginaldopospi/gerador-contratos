@@ -13,6 +13,9 @@ describe("draftFromContractData", () => {
     // O editor deve exigir selecao explicita antes de abrir os campos de PF/PJ.
     expect(draft.vendedores[0].tipo).toBe("");
     expect(draft.compradores[0].tipo).toBe("");
+    // Mantem nacionalidade inicial padrao para reduzir digitacao manual.
+    expect(draft.vendedores[0].nacionalidade).toBe("brasileiro(a)");
+    expect(draft.vendedores[0].conjNacionalidade).toBe("brasileiro(a)");
   });
 
   it("deve mapear campos estruturados e extras", () => {
