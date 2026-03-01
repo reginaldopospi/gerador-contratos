@@ -1160,11 +1160,8 @@
                       <!-- Atualiza no input e no change para alternar PF/PJ sem atraso visual. -->
                       <select
                         id={`${section.idPrefix}_tipo_${index}`}
-                        value={selectedPartyTypeOption(party.tipo)}
-                        on:input={(event) =>
-                          onPartyTipoChange(section.role, index, selectValue(event))}
-                        on:change={(event) =>
-                          onPartyTipoChange(section.role, index, selectValue(event))}
+                        bind:value={party.tipo}
+                        on:change={() => onPartyTipoChange(section.role, index, party.tipo)}
                       >
                         <option value="">Selecione o tipo da parte</option>
                         {#each PARTY_TYPE_OPTIONS as option}
