@@ -156,3 +156,20 @@ func TestBuildPartyQualification_IncludesRepresentanteForPJ(t *testing.T) {
 		t.Fatalf("expected representative legal basis text in PJ qualification: %s", qualification)
 	}
 }
+
+func TestBuildPreview_FullTextIncludesRepresentanteForPJ(t *testing.T) {
+	svc := NewService()
+	preview := svc.BuildPreview("0001", "Compromisso de Venda e Compra de Imovel", map[string]any{
+		"compradores":        []any{"comprador_1"},
+		"comprador_1__tipo":  "Pessoa Juridica",
+		"comprador_1__razao_social": "58.132.597 REGINALDO POSPI DO NASCIMENTO JUNIOR",
+		"comprador_1__cnpj":  "58.132.597/0001-08",
+		"comprador_1__end__texto": "Rua Benedito Augusto do Nascimento, n.o 30, Jardim Pilar, Maua/SP - CEP: 09370-060",
+		"comprador_1__rep_nome": "Reginaldo Pospi do Nascimento Junior",
+		"comprador_1__rep_cpf":  "123.456.789-10",
+	})
+
+	if !strings.Contains(preview.FullText, "neste ato representada por REGINALDO POSPI DO NASCIMENTO JUNIOR") {
+		t.Fatalf("expected representative in full contract preview: %s", preview.FullText)
+	}
+}
