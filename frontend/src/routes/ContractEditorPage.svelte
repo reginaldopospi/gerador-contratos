@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Document, HeadingLevel, Packer, Paragraph } from "docx";
+  import { AlignmentType, Paragraph, PatchType, TextRun, patchDocument } from "docx";
   import { api, APIError } from "../lib/api";
   import {
     formatCep,
@@ -33,6 +33,10 @@
     type PartyDraft,
     type PartyRole
   } from "../lib/utils/contract-editor";
+  import {
+    buildContractPreviewBlocks,
+    type ContractPreviewBlock
+  } from "../lib/utils/contract-preview-format";
   import { requireAuth } from "../lib/utils/guards";
 
   export let params: { id: string };
@@ -67,8 +71,13 @@
   let partyCepLookup = new Map<string, LookupState>();
   const partyCepLookupRequestIds = new Map<string, number>();
   const partyLastFetchedCep = new Map<string, string>();
+  let previewBlocks: ContractPreviewBlock[] = [];
 
   type PropertyToggleField = "imovelParFar" | "imovelAlienado" | "imovelAlugado" | "imovelFicaraBens";
+  // Modelo DOCX timbrado usado na exportacao do contrato.
+  const CONTRACT_DOCX_TEMPLATE_URL = "/templates/contrato-timbrado-modelo.docx";
+  // Mantem o rodape no mesmo formato do modelo original quando nao houver contagem automatica.
+  const CONTRACT_DEFAULT_TOTAL_PAGES = "10";
 
   // Replica as opcoes de tipo de imovel usadas no app Python.
   const PROPERTY_TYPE_OPTIONS = [
@@ -254,6 +263,7 @@
       paymentBalanceMessage = `Sobram ${formatMoneyBR(Math.abs(diferenca))} em relacao ao Preco total.`;
     }
   }
+  $: previewBlocks = preview ? buildPreviewBlocksForRender(preview) : [];
 
   async function load(): Promise<void> {
     loading = true;
@@ -388,15 +398,7 @@
         throw new Error("Nao foi possivel montar o contrato para exportacao.");
       }
 
-      const documentBody = new Document({
-        sections: [
-          {
-            children: buildContractParagraphs(latestPreview.title, contractText)
-          }
-        ]
-      });
-
-      const blob = await Packer.toBlob(documentBody);
+      const blob = await buildContractDocxBlob(latestPreview, details.contract.numero);
       triggerBlobDownload(blob, buildDocxFilename(details.contract.numero, details.contract.tipo));
       success = "Contrato DOCX baixado com sucesso.";
     } catch (err) {
@@ -1219,28 +1221,112 @@
     return contractPreview.sections.join("\n\n").trim();
   }
 
-  function buildContractParagraphs(title: string, text: string): Paragraph[] {
-    const paragraphs: Paragraph[] = [];
-    const normalizedTitle = title.trim();
-    if (normalizedTitle !== "") {
-      paragraphs.push(
-        new Paragraph({
-          heading: HeadingLevel.HEADING_1,
-          text: normalizedTitle
-        })
-      );
-      paragraphs.push(new Paragraph({ text: " " }));
+  // Normaliza strings para comparar titulo e linhas da previa sem conflito de acento/caixa.
+  function normalizeComparableText(value: string): string {
+    return value
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+  }
+
+  // Gera blocos da previa e remove duplicacao de titulo quando ele ja vier no texto integral.
+  function buildPreviewBlocksForRender(contractPreview: ContractPreview): ContractPreviewBlock[] {
+    const fullText = buildContractText(contractPreview);
+    if (fullText === "") {
+      return [];
     }
 
-    for (const line of text.split(/\r?\n/)) {
-      paragraphs.push(
-        new Paragraph({
-          text: line === "" ? " " : line
-        })
-      );
+    const blocks = buildContractPreviewBlocks(fullText);
+    const normalizedTitle = normalizeComparableText(contractPreview.title);
+    if (normalizedTitle === "") {
+      return blocks;
     }
 
-    return paragraphs;
+    const firstMeaningfulBlockIndex = blocks.findIndex((item) => item.kind !== "blank");
+    if (firstMeaningfulBlockIndex < 0) {
+      return blocks;
+    }
+
+    const firstMeaningfulBlock = blocks[firstMeaningfulBlockIndex];
+    if (
+      firstMeaningfulBlock.kind === "title" &&
+      normalizeComparableText(firstMeaningfulBlock.text) === normalizedTitle
+    ) {
+      return blocks.filter((_, index) => index !== firstMeaningfulBlockIndex);
+    }
+
+    return blocks;
+  }
+
+  // Define o estilo de cada paragrafo do contrato para manter layout juridico no DOCX.
+  function paragraphFromPreviewBlock(block: ContractPreviewBlock): Paragraph {
+    if (block.kind === "blank") {
+      return new Paragraph({ text: " " });
+    }
+
+    if (block.kind === "title") {
+      return new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 120, after: 120 },
+        children: [new TextRun({ text: block.text, bold: true, size: 24 })]
+      });
+    }
+
+    if (block.kind === "heading") {
+      return new Paragraph({
+        alignment: AlignmentType.LEFT,
+        spacing: { before: 120, after: 80 },
+        children: [new TextRun({ text: block.text, bold: true, size: 24 })]
+      });
+    }
+
+    return new Paragraph({
+      alignment: AlignmentType.JUSTIFIED,
+      spacing: { after: 120 },
+      children: [new TextRun({ text: block.text, size: 24 })]
+    });
+  }
+
+  function buildContractParagraphsForDocx(contractPreview: ContractPreview): Paragraph[] {
+    const blocks = buildPreviewBlocksForRender(contractPreview);
+    const paragraphs = blocks.map((block) => paragraphFromPreviewBlock(block));
+    if (paragraphs.length > 0) {
+      return paragraphs;
+    }
+    return [new Paragraph({ text: " " })];
+  }
+
+  async function fetchContractDocxTemplate(): Promise<ArrayBuffer> {
+    const response = await fetch(CONTRACT_DOCX_TEMPLATE_URL, { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error("Nao foi possivel carregar o modelo timbrado para o DOCX.");
+    }
+    return response.arrayBuffer();
+  }
+
+  async function buildContractDocxBlob(contractPreview: ContractPreview, contractNumber: string): Promise<Blob> {
+    const templateData = await fetchContractDocxTemplate();
+    const formattedNumber = contractNumber.trim() === "" ? "-" : contractNumber.trim();
+    return patchDocument({
+      outputType: "blob",
+      data: templateData,
+      keepOriginalStyles: true,
+      patches: {
+        CONTRACT_BODY: {
+          type: PatchType.DOCUMENT,
+          children: buildContractParagraphsForDocx(contractPreview)
+        },
+        CONTRACT_NUMBER: {
+          type: PatchType.PARAGRAPH,
+          children: [new TextRun({ text: formattedNumber })]
+        },
+        TOTAL_PAGES: {
+          type: PatchType.PARAGRAPH,
+          children: [new TextRun({ text: CONTRACT_DEFAULT_TOTAL_PAGES })]
+        }
+      }
+    });
   }
 
   function triggerBlobDownload(blob: Blob, fileName: string): void {
@@ -2188,15 +2274,29 @@
       <p>Atualizando previa...</p>
     {/if}
     {#if preview}
-      <h3>{preview.title}</h3>
-      {#if preview.full_text}
-        <article class="full-contract-preview">{preview.full_text}</article>
-      {:else}
-        <ol class="list-tight">
-          {#each preview.sections as section}
-            <li>{section}</li>
+      {#if preview.title.trim() !== ""}
+        <h3>{preview.title}</h3>
+      {/if}
+      {#if previewBlocks.length > 0}
+        <article class="full-contract-preview">
+          {#each previewBlocks as block}
+            <p
+              class="preview-block"
+              class:preview-block-title={block.kind === "title"}
+              class:preview-block-heading={block.kind === "heading"}
+              class:preview-block-paragraph={block.kind === "paragraph"}
+              class:preview-block-blank={block.kind === "blank"}
+            >
+              {#if block.kind === "blank"}
+                &nbsp;
+              {:else}
+                {block.text}
+              {/if}
+            </p>
           {/each}
-        </ol>
+        </article>
+      {:else}
+        <p>Sem conteudo textual para previa.</p>
       {/if}
     {:else}
       <p>Sem previa disponivel.</p>
@@ -2510,9 +2610,33 @@
     border-radius: 12px;
     background: rgba(255, 255, 255, 0.92);
     padding: 14px;
-    white-space: pre-wrap;
-    line-height: 1.6;
+    line-height: 1.55;
     font-size: 0.95rem;
+  }
+
+  .preview-block {
+    margin: 0 0 10px;
+  }
+
+  .preview-block-title {
+    text-align: center;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+
+  .preview-block-heading {
+    font-weight: 700;
+    margin-top: 8px;
+  }
+
+  .preview-block-paragraph {
+    text-align: justify;
+  }
+
+  .preview-block-blank {
+    margin: 0;
+    min-height: 10px;
   }
 
   .btn-sm {
