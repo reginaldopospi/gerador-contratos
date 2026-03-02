@@ -43,6 +43,20 @@ Para parar:
 powershell -ExecutionPolicy Bypass -File .\stop-backend.ps1
 ```
 
+### Atalho Windows (backend + frontend juntos)
+
+Subir tudo:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start-dev.ps1
+```
+
+Parar tudo:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\stop-dev.ps1
+```
+
 ### 2) Frontend
 
 ```bash
