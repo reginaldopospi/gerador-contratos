@@ -196,14 +196,11 @@ func TestBuildPreview_FullTextIncludesQuadroResumoObjectPaymentAndDeliveryBlocks
 		"Adiante simplesmente designado como IMOVEL:",
 		"IMOVEL: Apartamento 12 localizado no 1.o pavimento do Bloco 04.",
 		"CODIGO DE CONTRIBUINTE: 064.24.30.0148.00.000",
-		"DO VALOR DO IMOVEL:",
-		"R$ 130.000,00.",
-		"DA FORMA DE PAGAMENTO DO PRECO:",
-		"a) R$ 10.000,00 referente a sinal.",
+		"DO VALOR DO IMOVEL:\n\nR$ 130.000,00.",
+		"DA FORMA DE PAGAMENTO DO PRECO:\n\na) R$ 10.000,00 referente a sinal.",
 		"b) R$ 63.550,00 referente a entrada.",
 		"c) R$ 56.450,00 referente a financiamento.",
-		"DO PRAZO DE ENTREGA DAS CHAVES DO IMOVEL:",
-		"No ato da assinatura da escritura definitiva perante instituicao financeira.",
+		"DO PRAZO DE ENTREGA DAS CHAVES DO IMOVEL:\n\nNo ato da assinatura da escritura definitiva perante instituicao financeira.",
 	}
 
 	for _, snippet := range expectedSnippets {

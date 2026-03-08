@@ -25,6 +25,12 @@ func (s *Service) buildFullContract(numero, tipo string, data map[string]any) st
 		intermediadoraPadraoText(),
 		"DO OBJETO DO CONTRATO",
 		s.buildObjetoCompleto(data),
+		"DO VALOR DO IMOVEL:",
+		s.buildValorImovelResumo(data),
+		"DA FORMA DE PAGAMENTO DO PRECO:",
+		s.buildFormaPagamentoResumo(data),
+		"DO PRAZO DE ENTREGA DAS CHAVES DO IMOVEL:",
+		s.buildPrazoEntregaChavesResumo(data),
 		"DAS CLAUSULAS E CONDICOES",
 		s.clausulaPreambulo(data),
 	}
@@ -42,39 +48,43 @@ func (s *Service) buildObjetoCompleto(data map[string]any) string {
 	comarca := strings.TrimSpace(getString(data, "imovel__cidade_cartorio"))
 	descricaoMatricula := strings.TrimSpace(getString(data, "imovel__descricao_matricula"))
 	codigoContribuinte := strings.TrimSpace(getString(data, "imovel__contribuinte"))
-	precoTotal := strings.TrimSpace(getString(data, "preco_total"))
-	prazoEntrega := strings.TrimSpace(s.textoEntregaChaves(data))
-	pagamentos := buildResumoPagamentoItems(data)
 
-	// Mantem o quadro resumo com a mesma hierarquia do modelo juridico solicitado.
+	// Mantem o bloco exclusivo do objeto do contrato no quadro resumo.
 	lines := []string{
 		"Adiante simplesmente designado como IMOVEL:",
 		buildResumoObjetoPrincipal(tipoImovel, endereco, matricula, cartorio, comarca),
 		"",
 		"IMOVEL: " + valueOrFallback(descricaoMatricula, "(nao informado)"),
 		"CODIGO DE CONTRIBUINTE: " + valueOrFallback(codigoContribuinte, "(nao informado)"),
-		"",
-		"DO VALOR DO IMOVEL:",
-		ensureTrailingPeriod(valueOrFallback(precoTotal, "(nao informado)")),
-		"",
-		"DA FORMA DE PAGAMENTO DO PRECO:",
 	}
-
-	if len(pagamentos) == 0 {
-		lines = append(lines, "(nao informado).")
-	} else {
-		for idx, item := range pagamentos {
-			lines = append(lines, fmt.Sprintf("%s) %s", alphabeticalItemToken(idx), item))
-		}
-	}
-
-	lines = append(lines,
-		"",
-		"DO PRAZO DE ENTREGA DAS CHAVES DO IMOVEL:",
-		ensureTrailingPeriod(valueOrFallback(prazoEntrega, "(nao informado)")),
-	)
 
 	return strings.Join(lines, "\n")
+}
+
+// Monta o bloco "DO VALOR DO IMOVEL" mantendo fallback quando nao houver preco.
+func (s *Service) buildValorImovelResumo(data map[string]any) string {
+	precoTotal := strings.TrimSpace(getString(data, "preco_total"))
+	return ensureTrailingPeriod(valueOrFallback(precoTotal, "(nao informado)"))
+}
+
+// Monta o bloco "DA FORMA DE PAGAMENTO DO PRECO" com itens em linhas separadas.
+func (s *Service) buildFormaPagamentoResumo(data map[string]any) string {
+	pagamentos := buildResumoPagamentoItems(data)
+	if len(pagamentos) == 0 {
+		return "(nao informado)."
+	}
+
+	lines := make([]string, 0, len(pagamentos))
+	for idx, item := range pagamentos {
+		lines = append(lines, fmt.Sprintf("%s) %s", alphabeticalItemToken(idx), item))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// Monta o bloco do prazo de entrega de chaves com a regra de texto padrao/manual ja existente.
+func (s *Service) buildPrazoEntregaChavesResumo(data map[string]any) string {
+	prazoEntrega := strings.TrimSpace(s.textoEntregaChaves(data))
+	return ensureTrailingPeriod(valueOrFallback(prazoEntrega, "(nao informado)"))
 }
 
 // Monta a linha principal do item 01 do objeto com dados de matricula/cartorio quando disponiveis.

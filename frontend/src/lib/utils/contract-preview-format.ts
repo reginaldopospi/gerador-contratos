@@ -16,7 +16,7 @@ export interface ContractPreviewTitleLayout {
   subtitle: string;
 }
 
-const SUMMARY_HEADING_TOKEN = "quadro resumo";
+const CENTERED_HEADING_TOKENS = ["quadro resumo", "das clausulas e condicoes"] as const;
 const SECTION_LABEL_TOKENS = [
   "parte vendedora",
   "parte compradora",
@@ -36,10 +36,10 @@ function normalizeHeadingToken(value: string): string {
     .trim();
 }
 
-// Detecta a linha "QUADRO RESUMO" para aplicar centralizacao dedicada.
-function isSummaryHeadingLine(value: string): boolean {
+// Detecta linhas de cabecalho juridico que devem ficar centralizadas na previa.
+function isCenteredHeadingLine(value: string): boolean {
   const normalized = normalizeHeadingToken(value);
-  return normalized.startsWith(SUMMARY_HEADING_TOKEN);
+  return CENTERED_HEADING_TOKENS.some((token) => normalized.startsWith(token));
 }
 
 // Detecta labels que devem aparecer em caixa alta e negrito na previa.
@@ -111,7 +111,7 @@ export function buildContractPreviewBlocks(text: string): ContractPreviewBlock[]
       continue;
     }
 
-    if (isSummaryHeadingLine(trimmed)) {
+    if (isCenteredHeadingLine(trimmed)) {
       blocks.push({ kind: "centered_heading", text: trimmed.toLocaleUpperCase("pt-BR") });
       meaningfulCount += 1;
       continue;

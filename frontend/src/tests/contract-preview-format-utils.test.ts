@@ -43,6 +43,14 @@ describe("buildContractPreviewBlocks", () => {
     expect(blocks[2]).toEqual({ kind: "centered_heading", text: "QUADRO RESUMO" });
   });
 
+  it("deve centralizar DAS CLAUSULAS E CONDICOES", () => {
+    const blocks = buildContractPreviewBlocks(
+      "COMPROMISSO DE COMPRA E VENDA\nDE IMOVEL RESIDENCIAL\nDAS CLAUSULAS E CONDICOES\nTexto normal"
+    );
+
+    expect(blocks[2]).toEqual({ kind: "centered_heading", text: "DAS CLAUSULAS E CONDICOES" });
+  });
+
   it("deve destacar labels de partes/imovel/intermediadora em caixa alta", () => {
     const blocks = buildContractPreviewBlocks(
       "TITULO\nSUBTITULO\nparte vendedora\nparte compradora\nimovel\nintermediadora"
