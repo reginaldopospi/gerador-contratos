@@ -67,6 +67,9 @@ describe("ContractEditorPage commission fields", () => {
     const payerSelect = (await screen.findByRole("combobox", {
       name: "Quem paga comissao"
     })) as HTMLSelectElement;
+    const commissionInput = screen.getByRole("textbox", {
+      name: "Valor da comissao"
+    }) as HTMLInputElement;
     const momentSelect = screen.getByRole("combobox", {
       name: "Momento do pagamento"
     }) as HTMLSelectElement;
@@ -84,6 +87,13 @@ describe("ContractEditorPage commission fields", () => {
 
     await fireEvent.change(payerSelect, { target: { value: "Ambas as Partes" } });
     expect(payerSelect.value).toBe("Ambas as Partes");
+
+    // Garante mascara de percentual no valor da comissao.
+    await fireEvent.input(commissionInput, { target: { value: "6" } });
+    expect(commissionInput.value).toBe("6%");
+
+    await fireEvent.input(commissionInput, { target: { value: "12,345" } });
+    expect(commissionInput.value).toBe("12,34%");
 
     await fireEvent.change(momentSelect, { target: { value: "NA ESCRITURA" } });
     expect(momentSelect.value).toBe("NA ESCRITURA");

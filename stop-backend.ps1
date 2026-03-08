@@ -3,6 +3,27 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $stoppedAny = $false
+$repoRoot = Split-Path -Parent $PSCommandPath
+$logDir = Join-Path $repoRoot ".logs"
+$supervisorPidFile = Join-Path $logDir "backend-supervisor.pid"
+
+if (Test-Path $supervisorPidFile) {
+  $rawPid = Get-Content -Path $supervisorPidFile -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($null -ne $rawPid) {
+    $pidValue = 0
+    $normalizedPid = $rawPid.ToString().Trim()
+    if ([int]::TryParse($normalizedPid, [ref]$pidValue)) {
+      # Para o supervisor primeiro para evitar reinicio automatico durante o desligamento manual.
+      $supervisorProcess = Get-Process -Id $pidValue -ErrorAction SilentlyContinue
+      if ($supervisorProcess) {
+        Stop-Process -Id $pidValue -Force -ErrorAction SilentlyContinue
+        $stoppedAny = $true
+      }
+    }
+  }
+
+  Remove-Item -Path $supervisorPidFile -Force -ErrorAction SilentlyContinue
+}
 
 # Para processos que estejam ouvindo na porta da API.
 $connections = Get-NetTCPConnection -State Listen -LocalPort 8080 -ErrorAction SilentlyContinue

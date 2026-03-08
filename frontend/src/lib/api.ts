@@ -32,6 +32,7 @@ type RequestOptions = {
   body?: unknown;
   auth?: boolean;
   retryOnAuth?: boolean;
+  unavailableRetries?: number;
 };
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -39,7 +40,8 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     method = "GET",
     body,
     auth = true,
-    retryOnAuth = true
+    retryOnAuth = true,
+    unavailableRetries = 0
   } = options;
 
   const headers: Record<string, string> = {
@@ -51,14 +53,39 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     headers.Authorization = `Bearer ${authState.accessToken}`;
   }
 
-  let response: Response;
-  try {
-    response = await fetch(`${API_BASE}${path}`, {
-      method,
-      headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined
-    });
-  } catch {
+  let response: Response | null = null;
+  let lastFetchFailed = false;
+  for (let attempt = 0; attempt <= unavailableRetries; attempt += 1) {
+    try {
+      response = await fetch(`${API_BASE}${path}`, {
+        method,
+        headers,
+        body: body !== undefined ? JSON.stringify(body) : undefined
+      });
+      lastFetchFailed = false;
+
+      // Em indisponibilidade temporaria da API, aguarda e tenta novamente.
+      if (response.status >= 500 && attempt < unavailableRetries) {
+        await waitBeforeRetry(attempt);
+        continue;
+      }
+
+      break;
+    } catch {
+      lastFetchFailed = true;
+      if (attempt < unavailableRetries) {
+        await waitBeforeRetry(attempt);
+        continue;
+      }
+    }
+  }
+
+  if (lastFetchFailed) {
+    const resolved = resolveAPIError(undefined, 0, "");
+    throw new APIError(resolved.message, 0, resolved.code);
+  }
+
+  if (response === null) {
     const resolved = resolveAPIError(undefined, 0, "");
     throw new APIError(resolved.message, 0, resolved.code);
   }
@@ -70,7 +97,8 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
         method,
         body,
         auth,
-        retryOnAuth: false
+        retryOnAuth: false,
+        unavailableRetries
       });
     }
   }
@@ -90,6 +118,13 @@ async function safeJson(response: Response): Promise<any> {
   } catch {
     return {};
   }
+}
+
+async function waitBeforeRetry(attempt: number): Promise<void> {
+  // Backoff curto para cobrir reinicio da API sem bloquear por muito tempo.
+  const retryDelays = [300, 700, 1500, 2500];
+  const delayMs = retryDelays[Math.min(attempt, retryDelays.length - 1)];
+  await new Promise((resolve) => globalThis.setTimeout(resolve, delayMs));
 }
 
 async function refreshSession(refreshToken: string): Promise<boolean> {
@@ -132,6 +167,8 @@ export const api = {
     return request<AuthResponse>("/auth/login", {
       method: "POST",
       auth: false,
+      // Login precisa tolerar indisponibilidade temporaria quando a API esta reiniciando.
+      unavailableRetries: 3,
       body: input
     });
   },

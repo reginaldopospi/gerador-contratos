@@ -470,6 +470,37 @@
     updateField(key, sanitizePaymentInput(value));
   }
 
+  // Aplica mascara percentual em tempo real para o campo de comissao.
+  function updateCommissionValueField(value: string): void {
+    updateField("valorComissao", maskCommissionPercentInput(value));
+  }
+
+  // Mantem apenas formato numerico BR com sufixo de porcentagem.
+  function maskCommissionPercentInput(value: string): string {
+    const compact = value
+      .replace(/\s/g, "")
+      .replace(/%/g, "")
+      .replace(/\./g, ",");
+    if (compact === "") {
+      return "";
+    }
+
+    const normalized = compact.replace(/[^\d,]/g, "");
+    if (normalized === "") {
+      return "";
+    }
+
+    const parts = normalized.split(",");
+    const integerRaw = parts[0] ?? "";
+    const decimalRaw = parts.slice(1).join("").slice(0, 2);
+    const integerPart = integerRaw.replace(/^0+(?=\d)/, "") || "0";
+
+    if (decimalRaw === "") {
+      return `${integerPart}%`;
+    }
+    return `${integerPart},${decimalRaw}%`;
+  }
+
   // Remove prefixo/simbolos e preserva somente o necessario para parse de moeda BR.
   function sanitizePaymentInput(value: string): string {
     const compact = value.replace(/\s/g, "").replace(/^R\$/i, "");
@@ -2042,8 +2073,8 @@
               <input
                 id="commission_valorComissao"
                 value={draft.valorComissao}
-                placeholder="Ex.: 6% ou R$ 18.000,00"
-                on:input={(event) => updateField("valorComissao", inputValue(event))}
+                placeholder="Ex.: 6,50%"
+                on:input={(event) => updateCommissionValueField(inputValue(event))}
               />
             </div>
 
