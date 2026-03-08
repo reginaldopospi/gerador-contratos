@@ -1,8 +1,83 @@
-export type ContractPreviewBlockKind = "title" | "heading" | "paragraph" | "blank";
+export type ContractPreviewBlockKind =
+  | "title"
+  | "heading"
+  | "centered_heading"
+  | "section_label"
+  | "paragraph"
+  | "blank";
 
 export interface ContractPreviewBlock {
   kind: ContractPreviewBlockKind;
   text: string;
+}
+
+export interface ContractPreviewTitleLayout {
+  mainTitle: string;
+  subtitle: string;
+}
+
+const SUMMARY_HEADING_TOKEN = "quadro resumo";
+const SECTION_LABEL_TOKENS = [
+  "parte vendedora",
+  "parte compradora",
+  "imovel",
+  "intermediadora"
+] as const;
+
+// Normaliza headings para comparacao resiliente (caixa, acento e pontuacao).
+function normalizeHeadingToken(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Detecta a linha "QUADRO RESUMO" para aplicar centralizacao dedicada.
+function isSummaryHeadingLine(value: string): boolean {
+  const normalized = normalizeHeadingToken(value);
+  return normalized.startsWith(SUMMARY_HEADING_TOKEN);
+}
+
+// Detecta labels que devem aparecer em caixa alta e negrito na previa.
+function isSectionLabelLine(value: string): boolean {
+  const normalized = normalizeHeadingToken(value);
+  return SECTION_LABEL_TOKENS.some((token) => normalized.startsWith(token));
+}
+
+// Mantem labels juridicos em caixa alta para leitura rapida na previa.
+function formatSectionLabelText(value: string): string {
+  const upper = value.trim().toLocaleUpperCase("pt-BR");
+  return upper.replace(/\bIMOVEL\b/g, "IM\u00D3VEL");
+}
+
+// Resolve o titulo principal/subtitulo para manter o layout padrao do modelo juridico.
+export function resolveContractPreviewTitle(rawTitle: string): ContractPreviewTitleLayout {
+  const trimmed = rawTitle.trim();
+  if (trimmed === "") {
+    return { mainTitle: "", subtitle: "" };
+  }
+
+  const normalized = normalizeHeadingToken(trimmed);
+  const hasCompromisso = normalized.includes("compromisso");
+  const hasCompra = normalized.includes("compra");
+  const hasVenda = normalized.includes("venda");
+  const hasImovel = normalized.includes("imovel");
+
+  if (hasCompromisso && hasCompra && hasVenda) {
+    return {
+      mainTitle: "COMPROMISSO DE COMPRA E VENDA",
+      subtitle: hasImovel ? "DE IM\u00D3VEL RESIDENCIAL" : ""
+    };
+  }
+
+  return {
+    mainTitle: trimmed.toLocaleUpperCase("pt-BR"),
+    subtitle: ""
+  };
 }
 
 // Identifica linhas que devem aparecer como cabecalho juridico em caixa alta.
@@ -33,6 +108,18 @@ export function buildContractPreviewBlocks(text: string): ContractPreviewBlock[]
     const trimmed = line.trim();
     if (trimmed === "") {
       blocks.push({ kind: "blank", text: "" });
+      continue;
+    }
+
+    if (isSummaryHeadingLine(trimmed)) {
+      blocks.push({ kind: "centered_heading", text: trimmed.toLocaleUpperCase("pt-BR") });
+      meaningfulCount += 1;
+      continue;
+    }
+
+    if (isSectionLabelLine(trimmed)) {
+      blocks.push({ kind: "section_label", text: formatSectionLabelText(trimmed) });
+      meaningfulCount += 1;
       continue;
     }
 

@@ -35,6 +35,7 @@
   } from "../lib/utils/contract-editor";
   import {
     buildContractPreviewBlocks,
+    resolveContractPreviewTitle,
     type ContractPreviewBlock
   } from "../lib/utils/contract-preview-format";
   import { requireAuth } from "../lib/utils/guards";
@@ -65,6 +66,7 @@
   let hasPartyConditionalBlockers = false;
   type LookupStatus = "idle" | "loading" | "error" | "success";
   type LookupState = { status: LookupStatus; message: string };
+  type PreviewInlineSegment = { text: string; highlight: boolean };
   let partyCnpjLookup = new Map<string, LookupState>();
   const partyCnpjLookupRequestIds = new Map<string, number>();
   const partyLastFetchedCnpj = new Map<string, string>();
@@ -72,12 +74,21 @@
   const partyCepLookupRequestIds = new Map<string, number>();
   const partyLastFetchedCep = new Map<string, string>();
   let previewBlocks: ContractPreviewBlock[] = [];
+  let previewDisplayBlocks: ContractPreviewBlock[] = [];
+  let previewDisplayTitle = "";
+  let previewTitleLayout = { mainTitle: "", subtitle: "" };
 
   type PropertyToggleField = "imovelParFar" | "imovelAlienado" | "imovelAlugado" | "imovelFicaraBens";
   // Modelo DOCX timbrado usado na exportacao do contrato.
   const CONTRACT_DOCX_TEMPLATE_URL = "/templates/contrato-timbrado-modelo.docx";
   // Mantem o rodape no mesmo formato do modelo original quando nao houver contagem automatica.
   const CONTRACT_DEFAULT_TOTAL_PAGES = "10";
+  const CONTRACT_DOCX_FONT_NAME = "Garamond";
+  const CONTRACT_DOCX_BODY_SIZE = 23;
+  const CONTRACT_DOCX_HEADING_SIZE = 23;
+  const CONTRACT_DOCX_SUMMARY_SIZE = 24;
+  const CONTRACT_DOCX_TITLE_SIZE = 36;
+  const PREVIEW_HIGHLIGHT_PATTERN = /(PARTE VENDEDORA|PARTE COMPRADORA|INTERMEDIADORA|IM(?:\u00D3|O)VEL)/giu;
 
   // Replica as opcoes de tipo de imovel usadas no app Python.
   const PROPERTY_TYPE_OPTIONS = [
@@ -264,6 +275,9 @@
     }
   }
   $: previewBlocks = preview ? buildPreviewBlocksForRender(preview) : [];
+  $: previewTitleLayout = preview ? resolveContractPreviewTitle(preview.title) : { mainTitle: "", subtitle: "" };
+  $: previewDisplayTitle = buildPreviewDisplayTitle(previewTitleLayout);
+  $: previewDisplayBlocks = placePreviewTitleInsideBody(previewBlocks, previewDisplayTitle);
 
   async function load(): Promise<void> {
     loading = true;
@@ -1261,6 +1275,109 @@
       .replace(/[\u0300-\u036f]/g, "");
   }
 
+  // Mantem destaque uniforme dos termos juridicos na previa e no DOCX.
+  function normalizeHighlightedLegalTerm(value: string): string {
+    const upper = value.toLocaleUpperCase("pt-BR");
+    if (upper === "IMOVEL") {
+      return "IM\u00D3VEL";
+    }
+    return upper;
+  }
+
+  // Segmenta texto para destacar termos exigidos sem usar HTML inseguro.
+  function buildPreviewInlineSegments(text: string): PreviewInlineSegment[] {
+    const segments: PreviewInlineSegment[] = [];
+    let lastIndex = 0;
+    const regex = new RegExp(PREVIEW_HIGHLIGHT_PATTERN.source, PREVIEW_HIGHLIGHT_PATTERN.flags);
+    let match = regex.exec(text);
+
+    while (match !== null) {
+      const matchIndex = match.index;
+      if (matchIndex > lastIndex) {
+        segments.push({ text: text.slice(lastIndex, matchIndex), highlight: false });
+      }
+      segments.push({ text: normalizeHighlightedLegalTerm(match[0]), highlight: true });
+      lastIndex = matchIndex + match[0].length;
+      match = regex.exec(text);
+    }
+
+    if (lastIndex < text.length) {
+      segments.push({ text: text.slice(lastIndex), highlight: false });
+    }
+
+    if (segments.length === 0) {
+      segments.push({ text, highlight: false });
+    }
+
+    return segments;
+  }
+
+  // Normaliza linhas da previa para localizar pontos estruturais independentemente de acento/pontuacao.
+  function normalizePreviewLineToken(value: string): string {
+    return normalizeComparableText(value)
+      .replace(/[^a-z0-9]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  // Une titulo principal e subtitulo em uma unica linha para exibir no corpo da previa.
+  function buildPreviewDisplayTitle(titleLayout: { mainTitle: string; subtitle: string }): string {
+    const main = titleLayout.mainTitle.trim();
+    const subtitle = titleLayout.subtitle.trim();
+
+    if (main === "") {
+      return "";
+    }
+
+    return subtitle === "" ? main : `${main} ${subtitle}`;
+  }
+
+  // Identifica somente o bloco que representa o titulo principal inserido na previa.
+  function isPreviewContractTitleBlock(block: ContractPreviewBlock, titleText: string): boolean {
+    if (titleText.trim() === "" || block.kind !== "centered_heading") {
+      return false;
+    }
+    return normalizePreviewLineToken(block.text) === normalizePreviewLineToken(titleText);
+  }
+
+  // Move o titulo para a posicao da linha "NUMERO DO CONTRATO" somente na visualizacao web.
+  function placePreviewTitleInsideBody(
+    blocks: ContractPreviewBlock[],
+    titleText: string
+  ): ContractPreviewBlock[] {
+    if (titleText.trim() === "") {
+      return blocks;
+    }
+
+    const titleBlocks: ContractPreviewBlock[] = [{ kind: "centered_heading", text: titleText }];
+
+    const numberLineIndex = blocks.findIndex((block) => {
+      if (block.kind === "blank") {
+        return false;
+      }
+      return normalizePreviewLineToken(block.text).startsWith("numero do contrato");
+    });
+
+    if (numberLineIndex >= 0) {
+      return [
+        ...blocks.slice(0, numberLineIndex),
+        ...titleBlocks,
+        ...blocks.slice(numberLineIndex + 1)
+      ];
+    }
+
+    const firstMeaningfulBlockIndex = blocks.findIndex((item) => item.kind !== "blank");
+    if (firstMeaningfulBlockIndex < 0) {
+      return titleBlocks;
+    }
+
+    return [
+      ...blocks.slice(0, firstMeaningfulBlockIndex),
+      ...titleBlocks,
+      ...blocks.slice(firstMeaningfulBlockIndex)
+    ];
+  }
+
   // Gera blocos da previa e remove duplicacao de titulo quando ele ja vier no texto integral.
   function buildPreviewBlocksForRender(contractPreview: ContractPreview): ContractPreviewBlock[] {
     const fullText = buildContractText(contractPreview);
@@ -1290,6 +1407,19 @@
     return blocks;
   }
 
+  // Converte segmentos textuais em runs DOCX preservando destaques juridicos.
+  function buildDocxTextRuns(text: string, size: number, forceBold = false): TextRun[] {
+    const segments = buildPreviewInlineSegments(text);
+    return segments.map((segment) =>
+      new TextRun({
+        text: segment.text,
+        bold: forceBold || segment.highlight,
+        size,
+        font: CONTRACT_DOCX_FONT_NAME
+      })
+    );
+  }
+
   // Define o estilo de cada paragrafo do contrato para manter layout juridico no DOCX.
   function paragraphFromPreviewBlock(block: ContractPreviewBlock): Paragraph {
     if (block.kind === "blank") {
@@ -1299,29 +1429,58 @@
     if (block.kind === "title") {
       return new Paragraph({
         alignment: AlignmentType.CENTER,
-        spacing: { before: 120, after: 120 },
-        children: [new TextRun({ text: block.text, bold: true, size: 24 })]
+        spacing: { before: 120, after: 80 },
+        children: buildDocxTextRuns(block.text, CONTRACT_DOCX_TITLE_SIZE, true)
       });
     }
 
     if (block.kind === "heading") {
       return new Paragraph({
+        alignment: AlignmentType.JUSTIFIED,
+        spacing: { before: 120, after: 80 },
+        children: buildDocxTextRuns(block.text, CONTRACT_DOCX_HEADING_SIZE, true)
+      });
+    }
+
+    if (block.kind === "centered_heading") {
+      return new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 120, after: 80 },
+        children: buildDocxTextRuns(block.text, CONTRACT_DOCX_SUMMARY_SIZE, true)
+      });
+    }
+
+    if (block.kind === "section_label") {
+      return new Paragraph({
         alignment: AlignmentType.LEFT,
         spacing: { before: 120, after: 80 },
-        children: [new TextRun({ text: block.text, bold: true, size: 24 })]
+        children: buildDocxTextRuns(block.text, CONTRACT_DOCX_HEADING_SIZE, true)
       });
     }
 
     return new Paragraph({
       alignment: AlignmentType.JUSTIFIED,
       spacing: { after: 120 },
-      children: [new TextRun({ text: block.text, size: 24 })]
+      children: buildDocxTextRuns(block.text, CONTRACT_DOCX_BODY_SIZE)
     });
   }
 
   function buildContractParagraphsForDocx(contractPreview: ContractPreview): Paragraph[] {
+    const titleLayout = resolveContractPreviewTitle(contractPreview.title);
     const blocks = buildPreviewBlocksForRender(contractPreview);
-    const paragraphs = blocks.map((block) => paragraphFromPreviewBlock(block));
+    const paragraphs: Paragraph[] = [];
+
+    if (titleLayout.mainTitle !== "") {
+      paragraphs.push(paragraphFromPreviewBlock({ kind: "title", text: titleLayout.mainTitle }));
+    }
+    if (titleLayout.subtitle !== "") {
+      paragraphs.push(paragraphFromPreviewBlock({ kind: "title", text: titleLayout.subtitle }));
+    }
+    if (titleLayout.mainTitle !== "" || titleLayout.subtitle !== "") {
+      paragraphs.push(paragraphFromPreviewBlock({ kind: "blank", text: "" }));
+    }
+
+    paragraphs.push(...blocks.map((block) => paragraphFromPreviewBlock(block)));
     if (paragraphs.length > 0) {
       return paragraphs;
     }
@@ -2305,23 +2464,25 @@
       <p>Atualizando previa...</p>
     {/if}
     {#if preview}
-      {#if preview.title.trim() !== ""}
-        <h3>{preview.title}</h3>
-      {/if}
-      {#if previewBlocks.length > 0}
+      {#if previewDisplayBlocks.length > 0}
         <article class="full-contract-preview">
-          {#each previewBlocks as block}
+          {#each previewDisplayBlocks as block}
             <p
               class="preview-block"
               class:preview-block-title={block.kind === "title"}
               class:preview-block-heading={block.kind === "heading"}
+              class:preview-block-centered-heading={block.kind === "centered_heading"}
+              class:preview-block-contract-title={isPreviewContractTitleBlock(block, previewDisplayTitle)}
+              class:preview-block-section-label={block.kind === "section_label"}
               class:preview-block-paragraph={block.kind === "paragraph"}
               class:preview-block-blank={block.kind === "blank"}
             >
               {#if block.kind === "blank"}
                 &nbsp;
               {:else}
-                {block.text}
+                {#each buildPreviewInlineSegments(block.text) as segment}
+                  <span class:preview-inline-highlight={segment.highlight}>{segment.text}</span>
+                {/each}
               {/if}
             </p>
           {/each}
@@ -2661,8 +2822,30 @@
     margin-top: 8px;
   }
 
+  .preview-block-centered-heading {
+    text-align: center;
+    font-weight: 700;
+    text-transform: uppercase;
+    margin-top: 8px;
+  }
+
+  .preview-block-contract-title {
+    font-size: calc(1em + 2px);
+  }
+
+  .preview-block-section-label {
+    font-weight: 700;
+    text-transform: uppercase;
+    margin-top: 8px;
+  }
+
   .preview-block-paragraph {
     text-align: justify;
+  }
+
+  .preview-inline-highlight {
+    font-weight: 700;
+    text-transform: uppercase;
   }
 
   .preview-block-blank {
