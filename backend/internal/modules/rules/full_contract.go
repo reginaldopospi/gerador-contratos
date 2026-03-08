@@ -40,41 +40,112 @@ func (s *Service) buildObjetoCompleto(data map[string]any) string {
 	matricula := strings.TrimSpace(getString(data, "imovel__matricula"))
 	cartorio := strings.TrimSpace(getString(data, "imovel__cartorio"))
 	comarca := strings.TrimSpace(getString(data, "imovel__cidade_cartorio"))
+	descricaoMatricula := strings.TrimSpace(getString(data, "imovel__descricao_matricula"))
+	codigoContribuinte := strings.TrimSpace(getString(data, "imovel__contribuinte"))
 	precoTotal := strings.TrimSpace(getString(data, "preco_total"))
+	prazoEntrega := strings.TrimSpace(s.textoEntregaChaves(data))
+	pagamentos := buildResumoPagamentoItems(data)
 
+	// Mantem o quadro resumo com a mesma hierarquia do modelo juridico solicitado.
 	lines := []string{
-		fmt.Sprintf("01 (um) %s situado em %s.", tipoImovel, endereco),
+		"Adiante simplesmente designado como IMOVEL:",
+		buildResumoObjetoPrincipal(tipoImovel, endereco, matricula, cartorio, comarca),
+		"",
+		"IMOVEL: " + valueOrFallback(descricaoMatricula, "(nao informado)"),
+		"CODIGO DE CONTRIBUINTE: " + valueOrFallback(codigoContribuinte, "(nao informado)"),
+		"",
+		"DO VALOR DO IMOVEL:",
+		ensureTrailingPeriod(valueOrFallback(precoTotal, "(nao informado)")),
+		"",
+		"DA FORMA DE PAGAMENTO DO PRECO:",
 	}
 
-	extra := []string{}
-	if matricula != "" {
-		extra = append(extra, "MATRICULA: "+matricula)
-	}
-	if cartorio != "" {
-		extra = append(extra, "N. DO CARTORIO: "+cartorio)
-	}
-	if comarca != "" {
-		extra = append(extra, "COMARCA DO CARTORIO: "+comarca)
-	}
-	if len(extra) > 0 {
-		lines = append(lines, strings.Join(extra, " | "))
+	if len(pagamentos) == 0 {
+		lines = append(lines, "(nao informado).")
+	} else {
+		for idx, item := range pagamentos {
+			lines = append(lines, fmt.Sprintf("%s) %s", alphabeticalItemToken(idx), item))
+		}
 	}
 
-	if precoTotal != "" {
-		lines = append(lines, "Valor do imovel: "+precoTotal)
-	}
-
-	pagamento := buildPagamento(data)
-	if strings.TrimSpace(pagamento) != "" && pagamento != "(nao informado)" {
-		lines = append(lines, "Forma de pagamento: "+pagamento)
-	}
-
-	entrega := strings.TrimSpace(s.textoEntregaChaves(data))
-	if entrega != "" && entrega != "(nao informado)" {
-		lines = append(lines, "Prazo de entrega das chaves: "+entrega)
-	}
+	lines = append(lines,
+		"",
+		"DO PRAZO DE ENTREGA DAS CHAVES DO IMOVEL:",
+		ensureTrailingPeriod(valueOrFallback(prazoEntrega, "(nao informado)")),
+	)
 
 	return strings.Join(lines, "\n")
+}
+
+// Monta a linha principal do item 01 do objeto com dados de matricula/cartorio quando disponiveis.
+func buildResumoObjetoPrincipal(tipoImovel, endereco, matricula, cartorio, comarca string) string {
+	base := fmt.Sprintf("01 (um) %s situado em %s", tipoImovel, endereco)
+	detalhes := []string{}
+
+	if matricula != "" {
+		detalhes = append(detalhes, "Matricula sob o n.o "+matricula)
+	}
+	if cartorio != "" {
+		textoCartorio := cartorio + " Cartorio de Registro de Imoveis"
+		if comarca != "" {
+			textoCartorio += " de " + comarca
+		}
+		detalhes = append(detalhes, textoCartorio)
+	}
+
+	if len(detalhes) == 0 {
+		return base + "."
+	}
+	return base + ". " + strings.Join(detalhes, ", ") + "."
+}
+
+// Lista os pagamentos informados no formulario para preencher os itens a), b), c) do quadro resumo.
+func buildResumoPagamentoItems(data map[string]any) []string {
+	fields := []struct {
+		key   string
+		label string
+	}{
+		{key: "preco_sinal", label: "sinal"},
+		{key: "preco_entrada", label: "entrada"},
+		{key: "preco_financiamento", label: "financiamento"},
+		{key: "preco_fgts", label: "FGTS"},
+		{key: "preco_recurso_proprio", label: "recurso proprio"},
+		{key: "preco_carta_credito", label: "carta de credito"},
+		{key: "preco_subsidio", label: "subsidio"},
+		{key: "preco_parcelamento_total", label: "parcelamento"},
+		{key: "preco_outros", label: "outros valores"},
+	}
+
+	items := make([]string, 0, len(fields))
+	for _, field := range fields {
+		value := strings.TrimSpace(getString(data, field.key))
+		if value == "" {
+			continue
+		}
+		items = append(items, ensureTrailingPeriod(fmt.Sprintf("%s referente a %s", value, field.label)))
+	}
+	return items
+}
+
+// Gera identificadores alfabeticos dos itens de pagamento mantendo fallback numerico para listas longas.
+func alphabeticalItemToken(index int) string {
+	if index >= 0 && index < 26 {
+		return string(rune('a' + index))
+	}
+	return fmt.Sprintf("%d", index+1)
+}
+
+// Padroniza finalizacao de sentencas do quadro resumo para evitar pontuacao duplicada.
+func ensureTrailingPeriod(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	lastChar := trimmed[len(trimmed)-1]
+	if lastChar == '.' || lastChar == ':' || lastChar == ';' {
+		return trimmed
+	}
+	return trimmed + "."
 }
 
 func (s *Service) clausulaPreambulo(data map[string]any) string {
@@ -331,6 +402,7 @@ func buildPartyQualification(data map[string]any, prefix string) string {
 		ternaryStr(endereco != "", "residente em "+endereco, ""),
 	), ", ")
 }
+
 // Regras de qualificacao exigem cÃ´njuge/companheiro(a) em casado(a) ou uniao estavel.
 func requiresConjugeQualification(estadoCivil string) bool {
 	normalized := strings.ToLower(strings.TrimSpace(estadoCivil))

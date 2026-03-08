@@ -81,19 +81,19 @@ func TestBuildPreview_FullTextWithIndexedCustomClause(t *testing.T) {
 
 func TestBuildPartyQualification_IncludesConjugeForUniaoEstavel(t *testing.T) {
 	data := map[string]any{
-		"vend_1__tipo":              "Pessoa Fisica",
-		"vend_1__nome":              "Reginaldo Pospi do Nascimento Junior",
-		"vend_1__nacionalidade":     "brasileiro(a)",
-		"vend_1__estado_civil":      "uniao estavel",
-		"vend_1__regime_bens":       "comunhao parcial de bens",
-		"vend_1__profissao":         "advogado",
-		"vend_1__rg":                "44.497.309-6",
-		"vend_1__conj_nome":         "Maria Silva",
+		"vend_1__tipo":               "Pessoa Fisica",
+		"vend_1__nome":               "Reginaldo Pospi do Nascimento Junior",
+		"vend_1__nacionalidade":      "brasileiro(a)",
+		"vend_1__estado_civil":       "uniao estavel",
+		"vend_1__regime_bens":        "comunhao parcial de bens",
+		"vend_1__profissao":          "advogado",
+		"vend_1__rg":                 "44.497.309-6",
+		"vend_1__conj_nome":          "Maria Silva",
 		"vend_1__conj_nacionalidade": "brasileira",
-		"vend_1__conj_profissao":    "arquiteta",
-		"vend_1__conj_rg":           "11.222.333-4",
-		"vend_1__conj_cpf":          "111.222.333-44",
-		"vend_1__end__texto":        "Rua Miguel dos Santos, n.o 373, Jardim Casa Branca, Suzano/SP - CEP: 08663-040",
+		"vend_1__conj_profissao":     "arquiteta",
+		"vend_1__conj_rg":            "11.222.333-4",
+		"vend_1__conj_cpf":           "111.222.333-44",
+		"vend_1__end__texto":         "Rua Miguel dos Santos, n.o 373, Jardim Casa Branca, Suzano/SP - CEP: 08663-040",
 	}
 
 	qualification := buildPartyQualification(data, "vend_1")
@@ -160,16 +160,55 @@ func TestBuildPartyQualification_IncludesRepresentanteForPJ(t *testing.T) {
 func TestBuildPreview_FullTextIncludesRepresentanteForPJ(t *testing.T) {
 	svc := NewService()
 	preview := svc.BuildPreview("0001", "Compromisso de Venda e Compra de Imovel", map[string]any{
-		"compradores":        []any{"comprador_1"},
-		"comprador_1__tipo":  "Pessoa Juridica",
+		"compradores":               []any{"comprador_1"},
+		"comprador_1__tipo":         "Pessoa Juridica",
 		"comprador_1__razao_social": "58.132.597 REGINALDO POSPI DO NASCIMENTO JUNIOR",
-		"comprador_1__cnpj":  "58.132.597/0001-08",
-		"comprador_1__end__texto": "Rua Benedito Augusto do Nascimento, n.o 30, Jardim Pilar, Maua/SP - CEP: 09370-060",
-		"comprador_1__rep_nome": "Reginaldo Pospi do Nascimento Junior",
-		"comprador_1__rep_cpf":  "123.456.789-10",
+		"comprador_1__cnpj":         "58.132.597/0001-08",
+		"comprador_1__end__texto":   "Rua Benedito Augusto do Nascimento, n.o 30, Jardim Pilar, Maua/SP - CEP: 09370-060",
+		"comprador_1__rep_nome":     "Reginaldo Pospi do Nascimento Junior",
+		"comprador_1__rep_cpf":      "123.456.789-10",
 	})
 
 	if !strings.Contains(preview.FullText, "neste ato representada por REGINALDO POSPI DO NASCIMENTO JUNIOR") {
 		t.Fatalf("expected representative in full contract preview: %s", preview.FullText)
+	}
+}
+
+func TestBuildPreview_FullTextIncludesQuadroResumoObjectPaymentAndDeliveryBlocks(t *testing.T) {
+	svc := NewService()
+	preview := svc.BuildPreview("1830", "Compromisso de Venda e Compra de Imovel", map[string]any{
+		"imovel__tipo":                "apartamento",
+		"imovel__end__texto":          "Rua Algarve, n.o 85 - Bl. 4 - Apto. 12, Jardim Maria Clara, Guarulhos/SP - CEP: 07161-749",
+		"imovel__matricula":           "172.440",
+		"imovel__cartorio":            "2.o Oficial",
+		"imovel__cidade_cartorio":     "Guarulhos/SP",
+		"imovel__descricao_matricula": "Apartamento 12 localizado no 1.o pavimento do Bloco 04.",
+		"imovel__contribuinte":        "064.24.30.0148.00.000",
+		"preco_total":                 "R$ 130.000,00",
+		"preco_sinal":                 "R$ 10.000,00",
+		"preco_entrada":               "R$ 63.550,00",
+		"preco_financiamento":         "R$ 56.450,00",
+		"entrega_chaves":              "No ato da assinatura no Banco",
+	})
+
+	// Garante os blocos exigidos no quadro resumo com origem nos dados preenchidos pelo usuario.
+	expectedSnippets := []string{
+		"Adiante simplesmente designado como IMOVEL:",
+		"IMOVEL: Apartamento 12 localizado no 1.o pavimento do Bloco 04.",
+		"CODIGO DE CONTRIBUINTE: 064.24.30.0148.00.000",
+		"DO VALOR DO IMOVEL:",
+		"R$ 130.000,00.",
+		"DA FORMA DE PAGAMENTO DO PRECO:",
+		"a) R$ 10.000,00 referente a sinal.",
+		"b) R$ 63.550,00 referente a entrada.",
+		"c) R$ 56.450,00 referente a financiamento.",
+		"DO PRAZO DE ENTREGA DAS CHAVES DO IMOVEL:",
+		"No ato da assinatura da escritura definitiva perante instituicao financeira.",
+	}
+
+	for _, snippet := range expectedSnippets {
+		if !strings.Contains(preview.FullText, snippet) {
+			t.Fatalf("expected snippet %q in full text: %s", snippet, preview.FullText)
+		}
 	}
 }
