@@ -2,10 +2,13 @@ package rules
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 )
+
+var resumoImovelPrefixPattern = regexp.MustCompile(`(?i)^\s*IM[ÓO]VEL\s*:\s*`)
 
 func (s *Service) buildFullContract(numero, tipo string, data map[string]any) string {
 	title := s.tipoJuridicoContrato(tipo, getString(data, "preco_financiamento"))
@@ -47,7 +50,7 @@ func (s *Service) buildObjetoCompleto(data map[string]any) string {
 	matricula := strings.TrimSpace(getString(data, "imovel__matricula"))
 	cartorio := strings.TrimSpace(getString(data, "imovel__cartorio"))
 	comarca := strings.TrimSpace(getString(data, "imovel__cidade_cartorio"))
-	descricaoMatricula := strings.TrimSpace(getString(data, "imovel__descricao_matricula"))
+	descricaoMatricula := normalizeResumoImovelDescricao(strings.TrimSpace(getString(data, "imovel__descricao_matricula")))
 	codigoContribuinte := strings.TrimSpace(getString(data, "imovel__contribuinte"))
 
 	// Mantem o bloco exclusivo do objeto do contrato no quadro resumo.
@@ -198,6 +201,15 @@ func normalizeResumoEntregaText(value string) string {
 		"Parte vendedora", "PARTE VENDEDORA",
 	)
 	return replacer.Replace(strings.TrimSpace(value))
+}
+
+// Remove prefixo repetido "IMOVEL:" quando o usuario ja digitou a etiqueta no campo de descricao.
+func normalizeResumoImovelDescricao(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	return strings.TrimSpace(resumoImovelPrefixPattern.ReplaceAllString(trimmed, ""))
 }
 
 // Interpreta valores brasileiros como "R$ 450.000,00" e retorna o total em centavos.

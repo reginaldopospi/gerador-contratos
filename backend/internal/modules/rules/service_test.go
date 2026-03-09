@@ -182,7 +182,7 @@ func TestBuildPreview_FullTextIncludesQuadroResumoObjectPaymentAndDeliveryBlocks
 		"imovel__matricula":           "172.440",
 		"imovel__cartorio":            "2.o Oficial",
 		"imovel__cidade_cartorio":     "Guarulhos/SP",
-		"imovel__descricao_matricula": "Apartamento 12 localizado no 1.o pavimento do Bloco 04.",
+		"imovel__descricao_matricula": "IM\u00D3VEL: Apartamento 12 localizado no 1.o pavimento do Bloco 04.",
 		"imovel__contribuinte":        "064.24.30.0148.00.000",
 		"preco_total":                 "R$ 130.000,00",
 		"preco_sinal":                 "R$ 10.000,00",

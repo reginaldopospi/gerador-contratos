@@ -66,7 +66,7 @@
   let hasPartyConditionalBlockers = false;
   type LookupStatus = "idle" | "loading" | "error" | "success";
   type LookupState = { status: LookupStatus; message: string };
-  type PreviewInlineSegment = { text: string; highlight: boolean };
+  type PreviewInlineSegment = { text: string; highlight: boolean; forceNormalWeight?: boolean };
   let partyCnpjLookup = new Map<string, LookupState>();
   const partyCnpjLookupRequestIds = new Map<string, number>();
   const partyLastFetchedCnpj = new Map<string, string>();
@@ -1285,7 +1285,7 @@
   }
 
   // Segmenta texto para destacar termos exigidos sem usar HTML inseguro.
-  function buildPreviewInlineSegments(text: string): PreviewInlineSegment[] {
+  function buildHighlightedSegments(text: string): PreviewInlineSegment[] {
     const segments: PreviewInlineSegment[] = [];
     let lastIndex = 0;
     const regex = new RegExp(PREVIEW_HIGHLIGHT_PATTERN.source, PREVIEW_HIGHLIGHT_PATTERN.flags);
@@ -1310,6 +1310,24 @@
     }
 
     return segments;
+  }
+
+  // Mantem em negrito somente o rotulo antes de ":" e deixa o valor apos ":" em peso regular.
+  function buildPreviewInlineSegments(text: string): PreviewInlineSegment[] {
+    const colonIndex = text.indexOf(":");
+    if (colonIndex < 0) {
+      return buildHighlightedSegments(text);
+    }
+
+    const prefix = text.slice(0, colonIndex + 1);
+    const suffix = text.slice(colonIndex + 1);
+    const prefixSegments = buildHighlightedSegments(prefix);
+
+    if (suffix === "") {
+      return prefixSegments;
+    }
+
+    return [...prefixSegments, { text: suffix, highlight: false, forceNormalWeight: true }];
   }
 
   // Normaliza linhas da previa para localizar pontos estruturais independentemente de acento/pontuacao.
@@ -2490,7 +2508,12 @@
                 &nbsp;
               {:else}
                 {#each buildPreviewInlineSegments(block.text) as segment}
-                  <span class:preview-inline-highlight={segment.highlight}>{segment.text}</span>
+                  <span
+                    class:preview-inline-highlight={segment.highlight}
+                    class:preview-inline-no-bold={segment.forceNormalWeight === true}
+                  >
+                    {segment.text}
+                  </span>
                 {/each}
               {/if}
             </p>
@@ -2866,6 +2889,11 @@
   .preview-inline-highlight {
     font-weight: 700;
     text-transform: uppercase;
+  }
+
+  .preview-inline-no-bold {
+    font-weight: 400;
+    text-transform: none;
   }
 
   .preview-block-blank {
