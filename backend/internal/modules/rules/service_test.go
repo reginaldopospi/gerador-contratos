@@ -193,19 +193,27 @@ func TestBuildPreview_FullTextIncludesQuadroResumoObjectPaymentAndDeliveryBlocks
 
 	// Garante os blocos exigidos no quadro resumo com origem nos dados preenchidos pelo usuario.
 	expectedSnippets := []string{
-		"Adiante simplesmente designado como IMOVEL:",
-		"IMOVEL: Apartamento 12 localizado no 1.o pavimento do Bloco 04.",
-		"CODIGO DE CONTRIBUINTE: 064.24.30.0148.00.000",
-		"DO VALOR DO IMOVEL:\n\nR$ 130.000,00.",
-		"DA FORMA DE PAGAMENTO DO PRECO:\n\na) R$ 10.000,00 referente a sinal.",
-		"b) R$ 63.550,00 referente a entrada.",
-		"c) R$ 56.450,00 referente a financiamento.",
-		"DO PRAZO DE ENTREGA DAS CHAVES DO IMOVEL:\n\nNo ato da assinatura da escritura definitiva perante instituicao financeira.",
+		"DO OBJETO DO CONTRATO\n\n01 (um) apartamento situado em Rua Algarve, n.o 85 - Bl. 4 - Apto. 12, Jardim Maria Clara, Guarulhos/SP - CEP: 07161-749. MATR\u00CDCULA:172.440 | N. DO CART\u00D3RIO: 2.o Oficial | COMARCA DO CART\u00D3RIO: Guarulhos/SP",
+		"IM\u00D3VEL: Apartamento 12 localizado no 1.o pavimento do Bloco 04.",
+		"N.\u00BA DO CONTRIBUINTE: 064.24.30.0148.00.000",
+		"DO VALOR DO IMOVEL:\n\nR$ 130.000,00 (cento e trinta mil reais).",
+		"DA FORMA DE PAGAMENTO DO PRECO:\n\na) R$ 10.000,00 (dez mil reais), em moeda corrente nacional, como sinal e princ\u00EDpio de pagamento, que, com ci\u00EAncia e anu\u00EAncia da PARTE VENDEDORA, ser\u00E3o pagos diretamente \u00E0 INTERMEDIADORA na assinatura deste instrumento em sua conta banc\u00E1ria",
+		"b) R$ 63.550,00 (sessenta e tr\u00EAs mil, quinhentos e cinquenta reais), em moeda corrente nacional, a serem pagos \u00E0 PARTE VENDEDORA em sua conta banc\u00E1ria ou na conta de quem indicar no dia da assinatura da escritura perante institui\u00E7\u00E3o financeira competente;",
+		"c) R$ 56.450,00 (cinquenta e seis mil, quatrocentos e cinquenta reais), atrav\u00E9s de financiamento banc\u00E1rio, a serem pagos \u00E0 PARTE VENDEDORA;",
+		"DO PRAZO DE ENTREGA DAS CHAVES DO IMOVEL:\n\nNo ato da assinatura da escritura definitiva perante institui\u00E7\u00E3o financeira.",
 	}
 
 	for _, snippet := range expectedSnippets {
 		if !strings.Contains(preview.FullText, snippet) {
 			t.Fatalf("expected snippet %q in full text: %s", snippet, preview.FullText)
 		}
+	}
+}
+
+func TestBuildResumoValorComExtenso(t *testing.T) {
+	value := buildResumoValorComExtenso("R$ 450.000,00")
+	expected := "R$ 450.000,00 (quatrocentos e cinquenta mil reais)"
+	if value != expected {
+		t.Fatalf("expected %q, got %q", expected, value)
 	}
 }

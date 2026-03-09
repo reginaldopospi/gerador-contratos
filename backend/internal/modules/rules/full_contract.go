@@ -2,6 +2,7 @@ package rules
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -51,11 +52,10 @@ func (s *Service) buildObjetoCompleto(data map[string]any) string {
 
 	// Mantem o bloco exclusivo do objeto do contrato no quadro resumo.
 	lines := []string{
-		"Adiante simplesmente designado como IMOVEL:",
 		buildResumoObjetoPrincipal(tipoImovel, endereco, matricula, cartorio, comarca),
 		"",
-		"IMOVEL: " + valueOrFallback(descricaoMatricula, "(nao informado)"),
-		"CODIGO DE CONTRIBUINTE: " + valueOrFallback(codigoContribuinte, "(nao informado)"),
+		"IM\u00D3VEL: " + valueOrFallback(descricaoMatricula, "(nao informado)"),
+		"N.\u00BA DO CONTRIBUINTE: " + valueOrFallback(codigoContribuinte, "(nao informado)"),
 	}
 
 	return strings.Join(lines, "\n")
@@ -64,27 +64,68 @@ func (s *Service) buildObjetoCompleto(data map[string]any) string {
 // Monta o bloco "DO VALOR DO IMOVEL" mantendo fallback quando nao houver preco.
 func (s *Service) buildValorImovelResumo(data map[string]any) string {
 	precoTotal := strings.TrimSpace(getString(data, "preco_total"))
-	return ensureTrailingPeriod(valueOrFallback(precoTotal, "(nao informado)"))
+	return ensureTrailingPeriod(buildResumoValorComExtenso(precoTotal))
 }
 
 // Monta o bloco "DA FORMA DE PAGAMENTO DO PRECO" com itens em linhas separadas.
 func (s *Service) buildFormaPagamentoResumo(data map[string]any) string {
-	pagamentos := buildResumoPagamentoItems(data)
-	if len(pagamentos) == 0 {
+	lines := make([]string, 0, 6)
+	addItem := func(rawValue string, template string) {
+		value := strings.TrimSpace(rawValue)
+		if value == "" {
+			return
+		}
+		itemToken := alphabeticalItemToken(len(lines))
+		lines = append(lines, fmt.Sprintf("%s) %s", itemToken, fmt.Sprintf(template, buildResumoValorComExtenso(value))))
+	}
+
+	// Mantem a mesma ordem e narrativa juridica usada no modelo visual de referencia.
+	addItem(
+		getString(data, "preco_sinal"),
+		"%s, em moeda corrente nacional, como sinal e princ\u00EDpio de pagamento, que, com ci\u00EAncia e anu\u00EAncia da PARTE VENDEDORA, ser\u00E3o pagos diretamente \u00E0 INTERMEDIADORA na assinatura deste instrumento em sua conta banc\u00E1ria",
+	)
+	addItem(
+		getString(data, "preco_entrada"),
+		"%s, em moeda corrente nacional, a serem pagos \u00E0 PARTE VENDEDORA em sua conta banc\u00E1ria ou na conta de quem indicar no dia da assinatura da escritura perante institui\u00E7\u00E3o financeira competente;",
+	)
+	addItem(
+		getString(data, "preco_financiamento"),
+		"%s, atrav\u00E9s de financiamento banc\u00E1rio, a serem pagos \u00E0 PARTE VENDEDORA;",
+	)
+
+	// Preserva os demais campos monetarios com texto neutro quando existirem.
+	extraFields := []struct {
+		key   string
+		label string
+	}{
+		{key: "preco_fgts", label: "FGTS"},
+		{key: "preco_recurso_proprio", label: "recurso pr\u00F3prio"},
+		{key: "preco_carta_credito", label: "carta de cr\u00E9dito"},
+		{key: "preco_subsidio", label: "subs\u00EDdio"},
+		{key: "preco_parcelamento_total", label: "parcelamento"},
+		{key: "preco_outros", label: "outros valores"},
+	}
+	for _, field := range extraFields {
+		value := strings.TrimSpace(getString(data, field.key))
+		if value == "" {
+			continue
+		}
+		itemToken := alphabeticalItemToken(len(lines))
+		lines = append(lines, fmt.Sprintf("%s) %s referente a %s;", itemToken, buildResumoValorComExtenso(value), field.label))
+	}
+
+	if len(lines) == 0 {
 		return "(nao informado)."
 	}
 
-	lines := make([]string, 0, len(pagamentos))
-	for idx, item := range pagamentos {
-		lines = append(lines, fmt.Sprintf("%s) %s", alphabeticalItemToken(idx), item))
-	}
 	return strings.Join(lines, "\n")
 }
 
 // Monta o bloco do prazo de entrega de chaves com a regra de texto padrao/manual ja existente.
 func (s *Service) buildPrazoEntregaChavesResumo(data map[string]any) string {
 	prazoEntrega := strings.TrimSpace(s.textoEntregaChaves(data))
-	return ensureTrailingPeriod(valueOrFallback(prazoEntrega, "(nao informado)"))
+	prazoNormalizado := normalizeResumoEntregaText(valueOrFallback(prazoEntrega, "(nao informado)"))
+	return ensureTrailingPeriod(prazoNormalizado)
 }
 
 // Monta a linha principal do item 01 do objeto com dados de matricula/cartorio quando disponiveis.
@@ -93,48 +134,19 @@ func buildResumoObjetoPrincipal(tipoImovel, endereco, matricula, cartorio, comar
 	detalhes := []string{}
 
 	if matricula != "" {
-		detalhes = append(detalhes, "Matricula sob o n.o "+matricula)
+		detalhes = append(detalhes, "MATR\u00CDCULA:"+matricula)
 	}
 	if cartorio != "" {
-		textoCartorio := cartorio + " Cartorio de Registro de Imoveis"
-		if comarca != "" {
-			textoCartorio += " de " + comarca
-		}
-		detalhes = append(detalhes, textoCartorio)
+		detalhes = append(detalhes, "N. DO CART\u00D3RIO: "+cartorio)
+	}
+	if comarca != "" {
+		detalhes = append(detalhes, "COMARCA DO CART\u00D3RIO: "+comarca)
 	}
 
 	if len(detalhes) == 0 {
 		return base + "."
 	}
-	return base + ". " + strings.Join(detalhes, ", ") + "."
-}
-
-// Lista os pagamentos informados no formulario para preencher os itens a), b), c) do quadro resumo.
-func buildResumoPagamentoItems(data map[string]any) []string {
-	fields := []struct {
-		key   string
-		label string
-	}{
-		{key: "preco_sinal", label: "sinal"},
-		{key: "preco_entrada", label: "entrada"},
-		{key: "preco_financiamento", label: "financiamento"},
-		{key: "preco_fgts", label: "FGTS"},
-		{key: "preco_recurso_proprio", label: "recurso proprio"},
-		{key: "preco_carta_credito", label: "carta de credito"},
-		{key: "preco_subsidio", label: "subsidio"},
-		{key: "preco_parcelamento_total", label: "parcelamento"},
-		{key: "preco_outros", label: "outros valores"},
-	}
-
-	items := make([]string, 0, len(fields))
-	for _, field := range fields {
-		value := strings.TrimSpace(getString(data, field.key))
-		if value == "" {
-			continue
-		}
-		items = append(items, ensureTrailingPeriod(fmt.Sprintf("%s referente a %s", value, field.label)))
-	}
-	return items
+	return base + ". " + strings.Join(detalhes, " | ")
 }
 
 // Gera identificadores alfabeticos dos itens de pagamento mantendo fallback numerico para listas longas.
@@ -156,6 +168,236 @@ func ensureTrailingPeriod(value string) string {
 		return trimmed
 	}
 	return trimmed + "."
+}
+
+// Converte o valor monetario do formulario para "R$ X (valor por extenso)".
+func buildResumoValorComExtenso(rawValue string) string {
+	trimmed := strings.TrimSpace(rawValue)
+	if trimmed == "" {
+		return "(nao informado)"
+	}
+
+	amountInCents, ok := parseBRLMoneyToCents(trimmed)
+	if !ok {
+		return trimmed
+	}
+	return fmt.Sprintf("%s (%s)", trimmed, moneyToPortugueseWords(amountInCents))
+}
+
+// Normaliza termos juridicos do prazo de entrega para manter o mesmo estilo visual do modelo.
+func normalizeResumoEntregaText(value string) string {
+	replacer := strings.NewReplacer(
+		"Em ate", "Em at\u00E9",
+		" em ate ", " em at\u00E9 ",
+		" apos ", " ap\u00F3s ",
+		"instituicao", "institui\u00E7\u00E3o",
+		"Instituicao", "Institui\u00E7\u00E3o",
+		"imovel", "IM\u00D3VEL",
+		"Imovel", "IM\u00D3VEL",
+		"parte vendedora", "PARTE VENDEDORA",
+		"Parte vendedora", "PARTE VENDEDORA",
+	)
+	return replacer.Replace(strings.TrimSpace(value))
+}
+
+// Interpreta valores brasileiros como "R$ 450.000,00" e retorna o total em centavos.
+func parseBRLMoneyToCents(rawValue string) (int64, bool) {
+	clean := strings.TrimSpace(rawValue)
+	clean = strings.ReplaceAll(clean, "R$", "")
+	clean = strings.ReplaceAll(clean, " ", "")
+	if clean == "" {
+		return 0, false
+	}
+
+	integerPart := clean
+	decimalPart := "00"
+	if commaIndex := strings.LastIndex(clean, ","); commaIndex >= 0 {
+		integerPart = clean[:commaIndex]
+		decimalPart = clean[commaIndex+1:]
+	}
+
+	integerPart = strings.ReplaceAll(integerPart, ".", "")
+	integerPart = strings.ReplaceAll(integerPart, ",", "")
+	if integerPart == "" {
+		integerPart = "0"
+	}
+
+	for _, ch := range integerPart {
+		if ch < '0' || ch > '9' {
+			return 0, false
+		}
+	}
+
+	for _, ch := range decimalPart {
+		if ch < '0' || ch > '9' {
+			return 0, false
+		}
+	}
+
+	if len(decimalPart) == 0 {
+		decimalPart = "00"
+	} else if len(decimalPart) == 1 {
+		decimalPart = decimalPart + "0"
+	} else if len(decimalPart) > 2 {
+		decimalPart = decimalPart[:2]
+	}
+
+	integerValue, err := strconv.ParseInt(integerPart, 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	decimalValue, err := strconv.ParseInt(decimalPart, 10, 64)
+	if err != nil {
+		return 0, false
+	}
+
+	return integerValue*100 + decimalValue, true
+}
+
+// Converte centavos em texto por extenso para estilo juridico (ex.: "cento e vinte mil reais").
+func moneyToPortugueseWords(amountInCents int64) string {
+	reais := amountInCents / 100
+	centavos := amountInCents % 100
+
+	parts := []string{}
+	if reais > 0 {
+		label := "reais"
+		if reais == 1 {
+			label = "real"
+		}
+		parts = append(parts, numberToPortugueseWords(reais)+" "+label)
+	}
+	if centavos > 0 {
+		label := "centavos"
+		if centavos == 1 {
+			label = "centavo"
+		}
+		parts = append(parts, numberToPortugueseWords(centavos)+" "+label)
+	}
+
+	if len(parts) == 0 {
+		return "zero real"
+	}
+	if len(parts) == 1 {
+		return parts[0]
+	}
+	return parts[0] + " e " + parts[1]
+}
+
+// Converte numero inteiro para texto em portugues (escopo de valores monetarios do contrato).
+func numberToPortugueseWords(value int64) string {
+	if value == 0 {
+		return "zero"
+	}
+
+	type scaleToken struct {
+		singular string
+		plural   string
+	}
+
+	scales := []scaleToken{
+		{singular: "", plural: ""},
+		{singular: "mil", plural: "mil"},
+		{singular: "milh\u00E3o", plural: "milh\u00F5es"},
+		{singular: "bilh\u00E3o", plural: "bilh\u00F5es"},
+		{singular: "trilh\u00E3o", plural: "trilh\u00F5es"},
+	}
+
+	type groupedSegment struct {
+		text      string
+		group     int
+		scaleRank int
+	}
+
+	segments := []groupedSegment{}
+	groupIndex := 0
+	for value > 0 {
+		groupValue := int(value % 1000)
+		if groupValue > 0 {
+			groupText := threeDigitsToPortugueseWords(groupValue)
+			switch groupIndex {
+			case 0:
+				segments = append([]groupedSegment{{text: groupText, group: groupValue, scaleRank: groupIndex}}, segments...)
+			case 1:
+				if groupValue == 1 {
+					segments = append([]groupedSegment{{text: "mil", group: groupValue, scaleRank: groupIndex}}, segments...)
+				} else {
+					segments = append([]groupedSegment{{text: groupText + " mil", group: groupValue, scaleRank: groupIndex}}, segments...)
+				}
+			default:
+				token := scales[groupIndex]
+				if groupValue == 1 {
+					segments = append([]groupedSegment{{text: "um " + token.singular, group: groupValue, scaleRank: groupIndex}}, segments...)
+				} else {
+					segments = append([]groupedSegment{{text: groupText + " " + token.plural, group: groupValue, scaleRank: groupIndex}}, segments...)
+				}
+			}
+		}
+		value /= 1000
+		groupIndex += 1
+	}
+
+	if len(segments) == 1 {
+		return segments[0].text
+	}
+
+	result := segments[0].text
+	for idx := 1; idx < len(segments); idx += 1 {
+		current := segments[idx]
+		if idx == len(segments)-1 && current.scaleRank == 0 && current.group < 100 {
+			result += " e " + current.text
+			continue
+		}
+		result += ", " + current.text
+	}
+	return result
+}
+
+// Converte valores de 1 a 999 em texto por extenso.
+func threeDigitsToPortugueseWords(value int) string {
+	units := []string{
+		"zero", "um", "dois", "tr\u00EAs", "quatro", "cinco", "seis", "sete", "oito", "nove",
+		"dez", "onze", "doze", "treze", "quatorze", "quinze", "dezesseis", "dezessete", "dezoito", "dezenove",
+	}
+	tens := []string{
+		"", "", "vinte", "trinta", "quarenta", "cinquenta", "sessenta", "setenta", "oitenta", "noventa",
+	}
+	hundreds := []string{
+		"", "cento", "duzentos", "trezentos", "quatrocentos", "quinhentos", "seiscentos", "setecentos", "oitocentos", "novecentos",
+	}
+
+	if value == 100 {
+		return "cem"
+	}
+
+	result := []string{}
+	if value >= 100 {
+		result = append(result, hundreds[value/100])
+		value %= 100
+	}
+	if value >= 20 {
+		result = append(result, tens[value/10])
+		value %= 10
+	}
+	if value > 0 {
+		result = append(result, units[value])
+	}
+
+	return joinPortugueseSegments(result)
+}
+
+// Junta segmentos em portugues usando virgula e conjuncao "e" para manter fluidez textual.
+func joinPortugueseSegments(items []string) string {
+	if len(items) == 0 {
+		return ""
+	}
+	if len(items) == 1 {
+		return items[0]
+	}
+	if len(items) == 2 {
+		return items[0] + " e " + items[1]
+	}
+	return strings.Join(items[:len(items)-1], ", ") + " e " + items[len(items)-1]
 }
 
 func (s *Service) clausulaPreambulo(data map[string]any) string {

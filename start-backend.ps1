@@ -45,6 +45,20 @@ function Test-BackendHealth {
   }
 }
 
+function Restart-ListeningBackendProcess {
+  # Forca recarga do binario recem-compilado quando ja existe API ativa na porta 8080.
+  $connections = Get-NetTCPConnection -State Listen -LocalPort 8080 -ErrorAction SilentlyContinue
+  if (-not $connections) {
+    return
+  }
+
+  $processIds = $connections | Select-Object -ExpandProperty OwningProcess -Unique
+  foreach ($processId in $processIds) {
+    Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+    Write-Host ("Reiniciando API em execucao para aplicar o novo build (PID encerrado: {0})" -f $processId)
+  }
+}
+
 if (-not (Test-Path $binaryDir)) {
   # Garante a pasta de binarios antes da compilacao.
   New-Item -ItemType Directory -Path $binaryDir | Out-Null
@@ -80,6 +94,9 @@ if ($null -eq $supervisorProcess) {
 } else {
   Write-Host ("Supervisor do backend ja esta ativo (PID: {0})" -f $supervisorProcess.Id)
 }
+
+# Garante aplicacao imediata do binario atualizado quando o backend ja estava de pe.
+Restart-ListeningBackendProcess
 
 # Aguarda a API ficar pronta antes de retornar sucesso.
 for ($attempt = 0; $attempt -lt 20; $attempt++) {
