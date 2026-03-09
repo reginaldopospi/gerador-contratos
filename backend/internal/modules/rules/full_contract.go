@@ -56,7 +56,6 @@ func (s *Service) buildObjetoCompleto(data map[string]any) string {
 	// Mantem o bloco exclusivo do objeto do contrato no quadro resumo.
 	lines := []string{
 		buildResumoObjetoPrincipal(tipoImovel, endereco, matricula, cartorio, comarca),
-		"",
 		"IM\u00D3VEL: " + valueOrFallback(descricaoMatricula, "(nao informado)"),
 		"N.\u00BA DO CONTRIBUINTE: " + valueOrFallback(codigoContribuinte, "(nao informado)"),
 	}
@@ -176,15 +175,16 @@ func ensureTrailingPeriod(value string) string {
 // Converte o valor monetario do formulario para "R$ X (valor por extenso)".
 func buildResumoValorComExtenso(rawValue string) string {
 	trimmed := strings.TrimSpace(rawValue)
+	normalized := strings.TrimRight(trimmed, " .;:")
 	if trimmed == "" {
 		return "(nao informado)"
 	}
 
-	amountInCents, ok := parseBRLMoneyToCents(trimmed)
+	amountInCents, ok := parseBRLMoneyToCents(normalized)
 	if !ok {
 		return trimmed
 	}
-	return fmt.Sprintf("%s (%s)", trimmed, moneyToPortugueseWords(amountInCents))
+	return fmt.Sprintf("%s (%s)", normalized, moneyToPortugueseWords(amountInCents))
 }
 
 // Normaliza termos juridicos do prazo de entrega para manter o mesmo estilo visual do modelo.

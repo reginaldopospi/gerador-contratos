@@ -208,6 +208,11 @@ func TestBuildPreview_FullTextIncludesQuadroResumoObjectPaymentAndDeliveryBlocks
 			t.Fatalf("expected snippet %q in full text: %s", snippet, preview.FullText)
 		}
 	}
+
+	// Garante que nao haja linha em branco entre a descricao do item 01 e o rotulo IMOVEL.
+	if strings.Contains(preview.FullText, "COMARCA DO CART\u00D3RIO: Guarulhos/SP\n\nIM\u00D3VEL:") {
+		t.Fatalf("unexpected blank line between object line and IMOVEL label: %s", preview.FullText)
+	}
 }
 
 func TestBuildResumoValorComExtenso(t *testing.T) {
@@ -215,5 +220,19 @@ func TestBuildResumoValorComExtenso(t *testing.T) {
 	expected := "R$ 450.000,00 (quatrocentos e cinquenta mil reais)"
 	if value != expected {
 		t.Fatalf("expected %q, got %q", expected, value)
+	}
+
+	// Mantem extensao mesmo quando o valor chega sem mascara monetaria.
+	unmaskedValue := buildResumoValorComExtenso("450000")
+	unmaskedExpected := "450000 (quatrocentos e cinquenta mil reais)"
+	if unmaskedValue != unmaskedExpected {
+		t.Fatalf("expected %q, got %q", unmaskedExpected, unmaskedValue)
+	}
+
+	// Mantem extensao quando o valor chega com pontuacao terminal.
+	punctuatedValue := buildResumoValorComExtenso("R$ 450.000,00.")
+	punctuatedExpected := "R$ 450.000,00 (quatrocentos e cinquenta mil reais)"
+	if punctuatedValue != punctuatedExpected {
+		t.Fatalf("expected %q, got %q", punctuatedExpected, punctuatedValue)
 	}
 }
