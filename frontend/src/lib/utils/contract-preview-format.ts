@@ -45,7 +45,8 @@ function isCenteredHeadingLine(value: string): boolean {
 // Detecta labels que devem aparecer em caixa alta e negrito na previa.
 function isSectionLabelLine(value: string): boolean {
   const normalized = normalizeHeadingToken(value);
-  return SECTION_LABEL_TOKENS.some((token) => normalized.startsWith(token));
+  // Usa correspondencia exata para nao transformar em label linhas longas como "IMOVEL: descricao...".
+  return SECTION_LABEL_TOKENS.some((token) => normalized === token);
 }
 
 // Mantem labels juridicos em caixa alta para leitura rapida na previa.

@@ -1340,6 +1340,14 @@
     return normalizePreviewLineToken(block.text) === normalizePreviewLineToken(titleText);
   }
 
+  // Detecta itens de alinea (a), b), c)...) para aplicar recuo visual igual ao modelo juridico.
+  function isPreviewLetteredPaymentItem(block: ContractPreviewBlock): boolean {
+    if (block.kind !== "paragraph") {
+      return false;
+    }
+    return /^[a-z]\)\s+/i.test(block.text.trim());
+  }
+
   // Move o titulo para a posicao da linha "NUMERO DO CONTRATO" somente na visualizacao web.
   function placePreviewTitleInsideBody(
     blocks: ContractPreviewBlock[],
@@ -2475,6 +2483,7 @@
               class:preview-block-contract-title={isPreviewContractTitleBlock(block, previewDisplayTitle)}
               class:preview-block-section-label={block.kind === "section_label"}
               class:preview-block-paragraph={block.kind === "paragraph"}
+              class:preview-block-payment-item={isPreviewLetteredPaymentItem(block)}
               class:preview-block-blank={block.kind === "blank"}
             >
               {#if block.kind === "blank"}
@@ -2798,35 +2807,40 @@
 
   .full-contract-preview {
     margin-top: 10px;
-    border: 1px solid #d5e3f5;
-    border-radius: 12px;
-    background: rgba(255, 255, 255, 0.92);
-    padding: 14px;
-    line-height: 1.55;
-    font-size: 0.95rem;
+    border: 1px solid #d1d1d1;
+    border-radius: 6px;
+    background: #f5f5f5;
+    padding: 22px 24px;
+    line-height: 1.65;
+    font-size: 0.96rem;
+    color: #111111;
+    font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
   }
 
   .preview-block {
-    margin: 0 0 10px;
+    margin: 0 0 12px;
   }
 
   .preview-block-title {
     text-align: center;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.03em;
   }
 
   .preview-block-heading {
     font-weight: 700;
-    margin-top: 8px;
+    text-transform: uppercase;
+    margin-top: 18px;
+    margin-bottom: 10px;
   }
 
   .preview-block-centered-heading {
     text-align: center;
     font-weight: 700;
     text-transform: uppercase;
-    margin-top: 8px;
+    margin-top: 18px;
+    margin-bottom: 10px;
   }
 
   .preview-block-contract-title {
@@ -2840,7 +2854,13 @@
   }
 
   .preview-block-paragraph {
-    text-align: justify;
+    text-align: left;
+  }
+
+  .preview-block-payment-item {
+    padding-left: 34px;
+    text-indent: -18px;
+    margin-bottom: 8px;
   }
 
   .preview-inline-highlight {

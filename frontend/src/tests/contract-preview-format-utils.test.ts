@@ -61,6 +61,17 @@ describe("buildContractPreviewBlocks", () => {
     expect(blocks[4]).toEqual({ kind: "section_label", text: "IM\u00D3VEL" });
     expect(blocks[5]).toEqual({ kind: "section_label", text: "INTERMEDIADORA" });
   });
+
+  it("deve manter como paragrafo quando IMOVEL vier com descricao na mesma linha", () => {
+    const blocks = buildContractPreviewBlocks(
+      "TITULO\nSUBTITULO\nIMOVEL: Apartamento 12 localizado no bloco 04."
+    );
+
+    expect(blocks[2]).toEqual({
+      kind: "paragraph",
+      text: "IMOVEL: Apartamento 12 localizado no bloco 04."
+    });
+  });
 });
 
 describe("resolveContractPreviewTitle", () => {
