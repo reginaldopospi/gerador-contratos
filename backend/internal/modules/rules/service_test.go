@@ -235,4 +235,41 @@ func TestBuildResumoValorComExtenso(t *testing.T) {
 	if punctuatedValue != punctuatedExpected {
 		t.Fatalf("expected %q, got %q", punctuatedExpected, punctuatedValue)
 	}
+
+	// Mantem extensao quando o valor vier com espaco nao separavel (NBSP) apos "R$".
+	nbspValue := buildResumoValorComExtenso("R$\u00A0450.000,00")
+	nbspExpected := "R$\u00A0450.000,00 (quatrocentos e cinquenta mil reais)"
+	if nbspValue != nbspExpected {
+		t.Fatalf("expected %q, got %q", nbspExpected, nbspValue)
+	}
+}
+
+func TestBuildPreview_FullTextUsesElectronicSignatureClause(t *testing.T) {
+	svc := NewService()
+	preview := svc.BuildPreview("777", "Compromisso de Venda e Compra de Imovel", map[string]any{
+		"preco_total": "R$ 450.000,00",
+	})
+
+	// Confere substituicao do bloco antigo de assinaturas pela nova clausula 16.
+	expectedSnippets := []string{
+		"16. DA ASSINATURA ELETRONICA",
+		"16.1 As PARTES expressamente concordam que o presente instrumento podera ser firmado por meio de assinatura eletronica ou digital",
+		"16.1.1 Nos termos da Medida Provisoria n.o 2.200-2/2001, da Lei n.o 14.063/2020 e da Lei n.o 14.620/2023",
+		"16.1.3 Nos termos da legislacao vigente, fica desde ja estabelecido que a eventual ausencia de assinatura de testemunhas nao prejudicara a validade ou eficacia deste instrumento",
+		"16.2 Para todos os fins de direito, considerar-se-a como data de assinatura do presente instrumento aquela em que a ultima assinatura eletronica for realizada.",
+		"E por estarem justas e contratadas, as PARTES firmam o presente instrumento por meio de assinatura eletronica, para que produza todos os efeitos legais.",
+		"[Assinaturas Eletronicas]",
+	}
+	for _, snippet := range expectedSnippets {
+		if !strings.Contains(preview.FullText, snippet) {
+			t.Fatalf("expected snippet %q in full text: %s", snippet, preview.FullText)
+		}
+	}
+
+	if strings.Contains(preview.FullText, "15.2 Por estarem justas e contratadas, as partes assinam o presente instrumento em 03 (tres) vias de igual teor e forma.") {
+		t.Fatalf("legacy physical signature block should not exist: %s", preview.FullText)
+	}
+	if strings.Contains(preview.FullText, "TESTEMUNHAS:") {
+		t.Fatalf("legacy witnesses block should not exist: %s", preview.FullText)
+	}
 }

@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 var resumoImovelPrefixPattern = regexp.MustCompile(`(?i)^\s*IM[ÓO]VEL\s*:\s*`)
@@ -216,7 +217,13 @@ func normalizeResumoImovelDescricao(value string) string {
 func parseBRLMoneyToCents(rawValue string) (int64, bool) {
 	clean := strings.TrimSpace(rawValue)
 	clean = strings.ReplaceAll(clean, "R$", "")
-	clean = strings.ReplaceAll(clean, " ", "")
+	clean = strings.ReplaceAll(clean, "r$", "")
+	clean = strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) {
+			return -1
+		}
+		return r
+	}, clean)
 	if clean == "" {
 		return 0, false
 	}
@@ -573,11 +580,16 @@ func (s *Service) buildClauseLines(tipo string, data map[string]any) []string {
 		"14.3 Comunicacoes entre as partes devem observar os enderecos e contatos informados no contrato.",
 		"15. ELEICAO DO FORO",
 		"15.1 Fica eleito o foro da situacao do IMOVEL, com renuncia a qualquer outro, por mais privilegiado que seja.",
-		"15.2 Por estarem justas e contratadas, as partes assinam o presente instrumento em 03 (tres) vias de igual teor e forma.",
-		fmt.Sprintf("15.3 %s", lineLocalData(data, time.Now().UTC())),
+		"16. DA ASSINATURA ELETRONICA",
+		"16.1 As PARTES expressamente concordam que o presente instrumento podera ser firmado por meio de assinatura eletronica ou digital, inclusive por intermedio de plataformas eletronicas de assinatura, produzindo todos os efeitos legais.",
+		"16.1.1 Nos termos da Medida Provisoria n.o 2.200-2/2001, da Lei n.o 14.063/2020 e da Lei n.o 14.620/2023, as PARTES reconhecem como validas e plenamente eficazes quaisquer modalidades de assinatura eletronica admitidas em lei, ainda que nao utilizem certificado digital emitido no padrao ICP-Brasil, desde que possibilitem a identificacao do signatario e a integridade do documento.",
+		"16.1.2 As PARTES concordam que a assinatura eletronica deste instrumento possui o mesmo valor juridico e probatorio de uma assinatura manuscrita, sendo plenamente oponivel perante terceiros.",
+		"16.1.3 Nos termos da legislacao vigente, fica desde ja estabelecido que a eventual ausencia de assinatura de testemunhas nao prejudicara a validade ou eficacia deste instrumento, quando a integridade e autenticidade das assinaturas forem conferidas por provedor de assinaturas eletronicas.",
+		"16.2 Para todos os fins de direito, considerar-se-a como data de assinatura do presente instrumento aquela em que a ultima assinatura eletronica for realizada.",
+		"E por estarem justas e contratadas, as PARTES firmam o presente instrumento por meio de assinatura eletronica, para que produza todos os efeitos legais.",
+		"[Assinaturas Eletronicas]",
 	)
 
-	lines = append(lines, signatureLines(data, s.papelParteVendedoraOuCedente(tipo), s.papelParteCompradoraOuCessionaria(tipo))...)
 	return lines
 }
 
